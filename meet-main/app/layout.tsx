@@ -5,47 +5,46 @@ import type { Metadata, Viewport } from 'next';
 import { Toaster } from 'react-hot-toast';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   title: {
-    default: 'LiveKit Meet | Conference app build with LiveKit open source',
+    default: 'SpacePresent | Spatial interactive meetings',
     template: '%s',
   },
   description:
-    'LiveKit is an open source WebRTC project that gives you everything needed to build scalable and real-time audio and/or video experiences in your applications.',
+    'SpacePresent turns meetings and dense information into navigable collaborative knowledge spaces.',
   twitter: {
-    creator: '@livekitted',
-    site: '@livekitted',
     card: 'summary_large_image',
   },
   openGraph: {
-    url: 'https://meet.livekit.io',
+    url: '/',
     images: [
       {
-        url: 'https://meet.livekit.io/images/livekit-meet-open-graph.png',
-        width: 2000,
-        height: 1000,
-        type: 'image/png',
+        url: '/images/spacepresent-logo.svg',
+        width: 520,
+        height: 96,
+        type: 'image/svg+xml',
       },
     ],
-    siteName: 'LiveKit Meet',
+    siteName: 'SpacePresent',
   },
   icons: {
     icon: {
       rel: 'icon',
-      url: '/favicon.ico',
+      url: '/images/spacepresent-mark.svg',
     },
     apple: [
       {
         rel: 'apple-touch-icon',
-        url: '/images/livekit-apple-touch.png',
+        url: '/images/spacepresent-mark.svg',
         sizes: '180x180',
       },
-      { rel: 'mask-icon', url: '/images/livekit-safari-pinned-tab.svg', color: '#070707' },
+      { rel: 'mask-icon', url: '/images/spacepresent-mark.svg', color: '#050912' },
     ],
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#070707',
+  themeColor: '#050912',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

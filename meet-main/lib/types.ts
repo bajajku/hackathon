@@ -20,9 +20,13 @@ export function isVideoCodec(codec: string): codec is VideoCodec {
   return videoCodecs.includes(codec as VideoCodec);
 }
 
+export type ParticipantRole = 'host' | 'participant';
+
 export type ConnectionDetails = {
   serverUrl: string;
   roomName: string;
   participantName: string;
   participantToken: string;
+  worldId?: string;
+  role?: ParticipantRole;
 };

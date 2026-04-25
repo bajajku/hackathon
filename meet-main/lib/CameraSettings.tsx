@@ -11,8 +11,8 @@ import { isLocalTrack, LocalTrackPublication, Track } from 'livekit-client';
 import styles from '../styles/DeviceSettings.module.css';
 
 const BACKGROUND_IMAGES = [
-  { name: 'Studio', path: '/images/livekit-meet-open-graph.png' },
-  { name: 'Signal', path: '/images/livekit-apple-touch.png' },
+  { name: 'World Grid', path: '/images/spacepresent-world-grid.svg' },
+  { name: 'Signal Field', path: '/images/spacepresent-signal-field.svg' },
 ];
 
 // Background options

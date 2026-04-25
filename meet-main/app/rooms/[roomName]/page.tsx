@@ -13,6 +13,9 @@ export default async function Page({
     hq?: string;
     codec?: string;
     singlePC?: string;
+    worldId?: string;
+    created?: string;
+    prefillName?: string;
   }>;
 }) {
   const _params = await params;
@@ -31,6 +34,9 @@ export default async function Page({
       hq={hq}
       codec={codec}
       singlePeerConnection={singlePC}
+      worldId={_searchParams.worldId}
+      created={_searchParams.created === '1'}
+      prefillName={_searchParams.prefillName}
     />
   );
 }

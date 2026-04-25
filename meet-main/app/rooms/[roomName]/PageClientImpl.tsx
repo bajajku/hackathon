@@ -29,6 +29,13 @@ import {
 import { useRouter } from 'next/navigation';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
 import { useLowCPUOptimizer } from '@/lib/usePerfomanceOptimiser';
+import { WorldSessionProvider } from '@/lib/useWorldSession';
+import {
+  ensureMediaDevicesShim,
+  getErrorMessageFromUnknown,
+  isLikelyMediaCaptureError,
+  isMediaCaptureSupported,
+} from '@/lib/mediaSupport';
 
 const CONN_DETAILS_ENDPOINT =
   process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT ?? '/api/connection-details';
@@ -40,56 +47,149 @@ export function PageClientImpl(props: {
   hq: boolean;
   codec: VideoCodec;
   singlePeerConnection: boolean;
+  worldId?: string;
+  created?: boolean;
+  prefillName?: string;
 }) {
+  const mediaCaptureSupported = React.useMemo(() => isMediaCaptureSupported(), []);
+  const autoJoinAttempted = React.useRef(false);
+  const [mediaShimReady, setMediaShimReady] = React.useState(mediaCaptureSupported);
   const [preJoinChoices, setPreJoinChoices] = React.useState<LocalUserChoices | undefined>(
     undefined,
   );
-  const preJoinDefaults = React.useMemo(() => {
-    return {
-      username: '',
-      videoEnabled: true,
-      audioEnabled: true,
-    };
-  }, []);
+  const [preJoinErrorMessage, setPreJoinErrorMessage] = React.useState<string | null>(null);
   const [connectionDetails, setConnectionDetails] = React.useState<ConnectionDetails | undefined>(
     undefined,
   );
+  const [showShareModal, setShowShareModal] = React.useState(Boolean(props.created));
 
-  const handlePreJoinSubmit = React.useCallback(async (values: LocalUserChoices) => {
-    setPreJoinChoices(values);
-    const url = new URL(CONN_DETAILS_ENDPOINT, window.location.origin);
-    url.searchParams.append('roomName', props.roomName);
-    url.searchParams.append('participantName', values.username);
-    if (props.region) {
-      url.searchParams.append('region', props.region);
+  const preJoinDefaults = React.useMemo(() => {
+    return {
+      username: props.prefillName ?? '',
+      videoEnabled: mediaCaptureSupported,
+      audioEnabled: mediaCaptureSupported,
+      videoDeviceId: '',
+      audioDeviceId: '',
+    };
+  }, [props.prefillName, mediaCaptureSupported]);
+
+  const handlePreJoinSubmit = React.useCallback(
+    async (values: LocalUserChoices) => {
+      setPreJoinErrorMessage(null);
+      const username = (values.username ?? '').trim() || props.prefillName || 'Guest';
+      const userChoices: LocalUserChoices = {
+        ...values,
+        username,
+        videoEnabled: mediaCaptureSupported ? values.videoEnabled : false,
+        audioEnabled: mediaCaptureSupported ? values.audioEnabled : false,
+      };
+
+      try {
+        const url = new URL(CONN_DETAILS_ENDPOINT, window.location.origin);
+        url.searchParams.append('roomName', props.roomName);
+        url.searchParams.append('participantName', userChoices.username);
+        if (props.region) {
+          url.searchParams.append('region', props.region);
+        }
+        if (props.worldId) {
+          url.searchParams.append('worldId', props.worldId);
+        }
+
+        const connectionDetailsResp = await fetch(url.toString());
+        if (!connectionDetailsResp.ok) {
+          const message = await getErrorMessage(connectionDetailsResp);
+          throw new Error(message);
+        }
+        const connectionDetailsData = (await connectionDetailsResp.json()) as ConnectionDetails;
+        setPreJoinChoices(userChoices);
+        setConnectionDetails(connectionDetailsData);
+      } catch (error) {
+        console.error(error);
+        setPreJoinChoices(undefined);
+        setConnectionDetails(undefined);
+        setPreJoinErrorMessage(getErrorMessageFromUnknown(error));
+      }
+    },
+    [mediaCaptureSupported, props.prefillName, props.region, props.roomName, props.worldId],
+  );
+
+  React.useEffect(() => {
+    if (mediaCaptureSupported) {
+      setMediaShimReady(true);
+      return;
     }
-    const connectionDetailsResp = await fetch(url.toString());
-    const connectionDetailsData = await connectionDetailsResp.json();
-    setConnectionDetails(connectionDetailsData);
+    ensureMediaDevicesShim();
+    setMediaShimReady(true);
+  }, [mediaCaptureSupported]);
+
+  React.useEffect(() => {
+    if (!mediaShimReady || !props.created || autoJoinAttempted.current) {
+      return;
+    }
+    autoJoinAttempted.current = true;
+
+    const hostName = (props.prefillName ?? '').trim() || 'Host';
+    void handlePreJoinSubmit({
+      username: hostName,
+      audioEnabled: mediaCaptureSupported,
+      videoEnabled: mediaCaptureSupported,
+      videoDeviceId: '',
+      audioDeviceId: '',
+    });
+  }, [handlePreJoinSubmit, mediaCaptureSupported, mediaShimReady, props.created, props.prefillName]);
+
+  const handlePreJoinError = React.useCallback((error: unknown) => {
+    console.error(error);
+    if (isLikelyMediaCaptureError(error)) {
+      setPreJoinErrorMessage(
+        'Camera and microphone are unavailable on insecure HTTP. Join in view-only mode or use HTTPS.',
+      );
+      return;
+    }
+    setPreJoinErrorMessage(getErrorMessageFromUnknown(error));
   }, []);
-  const handlePreJoinError = React.useCallback((e: any) => console.error(e), []);
 
   return (
     <main data-lk-theme="default" className="meeting-shell">
       {connectionDetails === undefined || preJoinChoices === undefined ? (
         <div className="prejoin-shell">
           <div className="prejoin-card">
-            <PreJoin
-              defaults={preJoinDefaults}
-              onSubmit={handlePreJoinSubmit}
-              onError={handlePreJoinError}
-            />
+            {!mediaShimReady && (
+              <div className="room-alert-banner" role="status">
+                Preparing view-only mode...
+              </div>
+            )}
+            {!mediaCaptureSupported && (
+              <div className="room-alert-banner" role="status">
+                Joined in view-only mode on insecure HTTP. Use HTTPS to enable camera and mic.
+              </div>
+            )}
+            {preJoinErrorMessage && (
+              <div className="room-alert-banner room-alert-banner-error" role="alert">
+                {preJoinErrorMessage}
+              </div>
+            )}
+            {mediaShimReady && (
+              <PreJoin
+                defaults={preJoinDefaults}
+                onSubmit={handlePreJoinSubmit}
+                onError={handlePreJoinError}
+              />
+            )}
           </div>
         </div>
       ) : (
         <VideoConferenceComponent
           connectionDetails={connectionDetails}
           userChoices={preJoinChoices}
+          mediaCaptureSupported={mediaCaptureSupported}
           options={{
             codec: props.codec,
             hq: props.hq,
             singlePeerConnection: props.singlePeerConnection,
           }}
+          showShareModal={showShareModal}
+          onCloseShareModal={() => setShowShareModal(false)}
         />
       )}
     </main>
@@ -99,13 +199,16 @@ export function PageClientImpl(props: {
 function VideoConferenceComponent(props: {
   userChoices: LocalUserChoices;
   connectionDetails: ConnectionDetails;
+  mediaCaptureSupported: boolean;
   options: {
     hq: boolean;
     codec: VideoCodec;
     singlePeerConnection: boolean;
   };
+  showShareModal: boolean;
+  onCloseShareModal: () => void;
 }) {
-  const keyProvider = new ExternalE2EEKeyProvider();
+  const keyProvider = React.useMemo(() => new ExternalE2EEKeyProvider(), []);
   const { worker, e2eePassphrase } = useSetupE2EE();
   const e2eeEnabled = !!(e2eePassphrase && worker);
 
@@ -139,9 +242,21 @@ function VideoConferenceComponent(props: {
       e2ee: keyProvider && worker && e2eeEnabled ? { keyProvider, worker } : undefined,
       singlePeerConnection: props.options.singlePeerConnection,
     };
-  }, [props.userChoices, props.options.hq, props.options.codec]);
+  }, [
+    props.userChoices,
+    props.options.hq,
+    props.options.codec,
+    props.options.singlePeerConnection,
+    e2eeEnabled,
+    keyProvider,
+    worker,
+  ]);
 
-  const room = React.useMemo(() => new Room(roomOptions), []);
+  const roomRef = React.useRef<Room | null>(null);
+  if (!roomRef.current) {
+    roomRef.current = new Room(roomOptions);
+  }
+  const room = roomRef.current;
 
   React.useEffect(() => {
     if (e2eeEnabled) {
@@ -163,12 +278,36 @@ function VideoConferenceComponent(props: {
     } else {
       setE2eeSetupComplete(true);
     }
-  }, [e2eeEnabled, room, e2eePassphrase]);
+  }, [e2eeEnabled, room, e2eePassphrase, keyProvider]);
 
   const connectOptions = React.useMemo((): RoomConnectOptions => {
     return {
       autoSubscribe: true,
     };
+  }, []);
+
+  const router = useRouter();
+  const handleOnLeave = React.useCallback(() => router.push('/'), [router]);
+  const handleError = React.useCallback((error: Error) => {
+    console.error(error);
+    if (isLikelyMediaCaptureError(error)) {
+      if (!props.mediaCaptureSupported) {
+        return;
+      }
+      alert(
+        'Camera and microphone are unavailable on insecure HTTP. Join with media off or switch to HTTPS.',
+      );
+      return;
+    }
+    alert(
+      `Encountered an unexpected error, check the console logs for details: ${error.message}`,
+    );
+  }, [props.mediaCaptureSupported]);
+  const handleEncryptionError = React.useCallback((error: Error) => {
+    console.error(error);
+    alert(
+      `Encountered an unexpected encryption error, check the console logs for details: ${error.message}`,
+    );
   }, []);
 
   React.useEffect(() => {
@@ -186,12 +325,13 @@ function VideoConferenceComponent(props: {
         .catch((error) => {
           handleError(error);
         });
-      if (props.userChoices.videoEnabled) {
+
+      if (props.mediaCaptureSupported && props.userChoices.videoEnabled) {
         room.localParticipant.setCameraEnabled(true).catch((error) => {
           handleError(error);
         });
       }
-      if (props.userChoices.audioEnabled) {
+      if (props.mediaCaptureSupported && props.userChoices.audioEnabled) {
         room.localParticipant.setMicrophoneEnabled(true).catch((error) => {
           handleError(error);
         });
@@ -201,24 +341,21 @@ function VideoConferenceComponent(props: {
       room.off(RoomEvent.Disconnected, handleOnLeave);
       room.off(RoomEvent.EncryptionError, handleEncryptionError);
       room.off(RoomEvent.MediaDevicesError, handleError);
+      void room.disconnect();
     };
-  }, [e2eeSetupComplete, room, props.connectionDetails, props.userChoices]);
+  }, [
+    e2eeSetupComplete,
+    room,
+    props.connectionDetails,
+    props.userChoices,
+    props.mediaCaptureSupported,
+    connectOptions,
+    handleError,
+    handleOnLeave,
+    handleEncryptionError,
+  ]);
 
   const lowPowerMode = useLowCPUOptimizer(room);
-
-  const router = useRouter();
-  const handleOnLeave = React.useCallback(() => router.push('/'), [router]);
-  const handleError = React.useCallback((error: Error) => {
-    console.error(error);
-    alert(`Encountered an unexpected error, check the console logs for details: ${error.message}`);
-  }, []);
-  const handleEncryptionError = React.useCallback((error: Error) => {
-    console.error(error);
-    alert(
-      `Encountered an unexpected encryption error, check the console logs for details: ${error.message}`,
-    );
-  }, []);
-
   React.useEffect(() => {
     if (lowPowerMode) {
       console.warn('Low power mode enabled');
@@ -227,15 +364,143 @@ function VideoConferenceComponent(props: {
 
   return (
     <div className="lk-room-container">
-      <RoomContext.Provider value={room}>
-        <KeyboardShortcuts />
-        <VideoConference
-          chatMessageFormatter={formatChatMessageLinks}
-          SettingsComponent={SHOW_SETTINGS_MENU ? SettingsMenu : undefined}
+      {!props.mediaCaptureSupported && (
+        <div className="room-alert-banner" role="status">
+          Joined without camera and mic on insecure HTTP. Use HTTPS for full media access.
+        </div>
+      )}
+      {props.showShareModal && (
+        <ShareRoomModal
+          roomName={props.connectionDetails.roomName}
+          worldId={props.connectionDetails.worldId}
+          onClose={props.onCloseShareModal}
         />
-        <DebugMode />
-        <RecordingIndicator />
+      )}
+      <RoomContext.Provider value={room}>
+        <WorldSessionProvider connectionDetails={props.connectionDetails}>
+          <KeyboardShortcuts />
+          <VideoConference
+            chatMessageFormatter={formatChatMessageLinks}
+            SettingsComponent={SHOW_SETTINGS_MENU ? SettingsMenu : undefined}
+          />
+          <DebugMode />
+          <RecordingIndicator />
+        </WorldSessionProvider>
       </RoomContext.Provider>
     </div>
   );
+}
+
+function ShareRoomModal(props: { roomName: string; worldId?: string; onClose: () => void }) {
+  const [copyMessage, setCopyMessage] = React.useState<string>('');
+
+  const roomCode = props.roomName;
+  const shareLink = React.useMemo(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+    const shareUrl = new URL(`/rooms/${props.roomName}`, window.location.origin);
+    if (props.worldId) {
+      shareUrl.searchParams.set('worldId', props.worldId);
+    }
+    if (window.location.hash) {
+      shareUrl.hash = window.location.hash;
+    }
+    return shareUrl.toString();
+  }, [props.roomName, props.worldId]);
+
+  const copyValue = React.useCallback(async (value: string, label: string) => {
+    const markCopied = () => {
+      setCopyMessage(`${label} copied.`);
+      window.setTimeout(() => setCopyMessage(''), 1500);
+    };
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        markCopied();
+        return;
+      }
+      if (legacyCopyToClipboard(value)) {
+        markCopied();
+        return;
+      }
+      setCopyMessage(`Clipboard unavailable on HTTP. Copy the ${label.toLowerCase()} manually.`);
+    } catch (error) {
+      console.error(error);
+      if (legacyCopyToClipboard(value)) {
+        markCopied();
+        return;
+      }
+      setCopyMessage(`Clipboard blocked on HTTP. Copy the ${label.toLowerCase()} manually.`);
+    }
+  }, []);
+
+  return (
+    <div className="room-share-modal-backdrop" role="presentation">
+      <section className="room-share-modal" role="dialog" aria-modal="true" aria-label="Share room">
+        <h2>Room Ready</h2>
+        <p>Share this room code or link so others can join the same session.</p>
+        <div className="room-share-field">
+          <label>Room code</label>
+          <div>
+            <code>{roomCode}</code>
+            <button
+              className="lk-button"
+              type="button"
+              onClick={() => copyValue(roomCode, 'Room code')}
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+        <div className="room-share-field">
+          <label>Share link</label>
+          <div>
+            <code>{shareLink}</code>
+            <button
+              className="lk-button"
+              type="button"
+              onClick={() => copyValue(shareLink, 'Share link')}
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+        <div className="room-share-footer">
+          <span>{copyMessage}</span>
+          <button className="lk-button" type="button" onClick={props.onClose}>
+            Done
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+async function getErrorMessage(response: Response): Promise<string> {
+  try {
+    const body = await response.text();
+    return body || `Request failed with status ${response.status}`;
+  } catch {
+    return `Request failed with status ${response.status}`;
+  }
+}
+
+function legacyCopyToClipboard(value: string): boolean {
+  if (typeof document === 'undefined') return false;
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
 }

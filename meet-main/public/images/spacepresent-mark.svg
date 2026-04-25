@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">SpacePresent mark</title>
+  <defs>
+    <linearGradient id="g" x1="18" y1="108" x2="110" y2="20" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3EFFB2"/>
+      <stop offset=".56" stop-color="#62E8FF"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="18" fill="#050912"/>
+  <path d="M25.6 82.8C15.8 59.6 25.7 33 48.8 23.2c23.1-9.7 49.8 1.2 59.5 24.4 9.8 23.2-.6 48.9-23.7 58.6-23.1 9.8-49.2-.1-59-23.4Z" fill="#07111B" stroke="url(#g)" stroke-width="3"/>
+  <path d="M28.2 82.8c21.7 4.2 45.5-2.9 66-20.5M34.4 41.1c19.5 8.4 36.9 24.2 48.7 45.7" fill="none" stroke="#62E8FF" stroke-width="3" stroke-linecap="round"/>
+  <path d="M43 81h12V56h15v25h12V43h13v50H30V68h13v13Z" fill="url(#g)"/>
+  <circle cx="43" cy="36" r="7" fill="#3EFFB2"/>
+  <circle cx="95" cy="61" r="6" fill="#62E8FF"/>
+  <circle cx="61" cy="96" r="6" fill="#FFFFFF"/>
+</svg>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="96" viewBox="0 0 520 96" role="img" aria-labelledby="title desc">
+  <title id="title">SpacePresent</title>
+  <desc id="desc">SpacePresent wordmark with an orbital spatial graph mark.</desc>
+  <defs>
+    <linearGradient id="mark-gradient" x1="9" y1="79" x2="82" y2="12" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3EFFB2"/>
+      <stop offset=".54" stop-color="#62E8FF"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="word-gradient" x1="112" y1="18" x2="505" y2="78" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".62" stop-color="#DDF8FF"/>
+      <stop offset="1" stop-color="#8EFFD0"/>
+    </linearGradient>
+    <filter id="soft-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#soft-glow)">
+    <path d="M18.5 61.5C11.1 43.8 18.6 23.6 36.2 16.2c17.6-7.4 37.9.9 45.3 18.5 7.4 17.7-.5 37.2-18.1 44.6-17.6 7.4-37.5-.1-44.9-17.8Z" fill="#07111B" stroke="url(#mark-gradient)" stroke-width="2"/>
+    <path d="M20.5 61.5c16.5 3.2 34.6-2.2 50.2-15.6M25.2 29.8c14.8 6.4 28.1 18.4 37.1 34.8" fill="none" stroke="#62E8FF" stroke-width="2" stroke-linecap="round" opacity=".8"/>
+    <path d="M32 60h9V41h12v19h9V31h10v38H22V50h10v10Z" fill="url(#mark-gradient)"/>
+    <circle cx="32" cy="26" r="5" fill="#3EFFB2"/>
+    <circle cx="72" cy="45" r="4.5" fill="#62E8FF"/>
+    <circle cx="46" cy="72" r="4.5" fill="#FFFFFF"/>
+  </g>
+  <text x="104" y="63" fill="url(#word-gradient)" font-family="'Space Grotesk', 'Inter', 'Segoe UI', Arial, sans-serif" font-size="46" font-weight="700" letter-spacing="-1">SpacePresent</text>
+</svg>

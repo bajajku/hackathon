@@ -1,38 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 :root {
-  --page-bg: #070b12;
-  --page-bg-soft: #101824;
-  --glass-panel: rgba(13, 22, 34, 0.74);
-  --glass-elevated: rgba(19, 31, 45, 0.84);
-  --glass-muted: rgba(255, 255, 255, 0.065);
-  --glass-border: rgba(255, 255, 255, 0.14);
-  --glass-border-strong: rgba(255, 255, 255, 0.24);
-  --text-strong: rgba(250, 253, 255, 0.98);
-  --text-muted: rgba(220, 233, 244, 0.72);
-  --text-soft: rgba(229, 239, 249, 0.86);
-  --accent-cyan: #6ee7ff;
-  --accent-cyan-deep: #1c9cc2;
-  --accent-coral: #ff745c;
+  --font-sans:
+    'Space Grotesk', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    sans-serif;
+  --font-mono:
+    'Space Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, ui-monospace, monospace;
+  --page-bg: #050912;
+  --page-bg-soft: #08131f;
+  --panel-core: rgba(5, 12, 21, 0.86);
+  --glass-panel: rgba(7, 18, 30, 0.78);
+  --glass-elevated: rgba(9, 22, 36, 0.9);
+  --glass-muted: rgba(98, 232, 255, 0.055);
+  --glass-border: rgba(98, 232, 255, 0.18);
+  --glass-border-strong: rgba(142, 255, 208, 0.32);
+  --text-strong: rgba(248, 253, 255, 0.98);
+  --text-muted: rgba(213, 232, 239, 0.72);
+  --text-soft: rgba(231, 247, 250, 0.88);
+  --accent-cyan: #62e8ff;
+  --accent-cyan-deep: #1498b5;
+  --accent-mint: #3effb2;
+  --accent-mint-deep: #14a873;
+  --accent-coral: #ff6b57;
   --accent-coral-deep: #b64232;
   --danger: #ff554a;
   --danger-soft: rgba(255, 85, 74, 0.18);
-  --focus-ring: 0 0 0 3px rgba(110, 231, 255, 0.28);
-  --shadow-soft: 0 14px 42px rgba(0, 0, 0, 0.22);
-  --shadow-panel: 0 24px 80px rgba(0, 0, 0, 0.42);
-  --radius-sm: 0.45rem;
-  --radius-md: 0.65rem;
-  --radius-lg: 0.8rem;
+  --focus-ring: 0 0 0 3px rgba(62, 255, 178, 0.25);
+  --shadow-soft: 0 16px 42px rgba(0, 0, 0, 0.3);
+  --shadow-panel: 0 24px 80px rgba(0, 0, 0, 0.46);
+  --radius-sm: 0.3rem;
+  --radius-md: 0.4rem;
+  --radius-lg: 0.5rem;
   --control-height: 2.75rem;
 }
 
 [data-lk-theme='default'] {
   --lk-bg: var(--page-bg);
-  --lk-bg2: rgba(255, 255, 255, 0.045);
-  --lk-bg3: rgba(255, 255, 255, 0.07);
-  --lk-bg4: rgba(255, 255, 255, 0.1);
-  --lk-bg5: rgba(255, 255, 255, 0.16);
+  --lk-bg2: rgba(98, 232, 255, 0.045);
+  --lk-bg3: rgba(98, 232, 255, 0.07);
+  --lk-bg4: rgba(98, 232, 255, 0.1);
+  --lk-bg5: rgba(98, 232, 255, 0.16);
   --lk-fg: var(--text-strong);
   --lk-fg5: var(--text-muted);
-  --lk-accent-bg: var(--accent-cyan-deep);
+  --lk-accent-bg: var(--accent-mint);
   --lk-accent-fg: #031018;
   --lk-danger: var(--danger);
   --lk-danger2: rgba(255, 85, 74, 0.34);
@@ -63,11 +73,10 @@ body {
   flex-direction: column;
   color: var(--text-strong);
   background:
-    linear-gradient(125deg, rgba(110, 231, 255, 0.12), transparent 32%),
-    linear-gradient(235deg, rgba(255, 116, 92, 0.11), transparent 36%),
-    linear-gradient(180deg, var(--page-bg-soft), var(--page-bg) 58%);
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    linear-gradient(112deg, rgba(62, 255, 178, 0.09), transparent 30%),
+    linear-gradient(238deg, rgba(98, 232, 255, 0.1), transparent 34%),
+    linear-gradient(180deg, var(--page-bg-soft), var(--page-bg) 62%);
+  font-family: var(--font-sans);
 }
 
 body::before {
@@ -77,10 +86,14 @@ body::before {
   pointer-events: none;
   content: '';
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent 76%);
+    linear-gradient(rgba(98, 232, 255, 0.042) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(98, 232, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(135deg, transparent 0 48%, rgba(62, 255, 178, 0.03) 49% 51%, transparent 52%);
+  background-size:
+    52px 52px,
+    52px 52px,
+    180px 180px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.72), transparent 82%);
 }
 
 body > * {
@@ -90,12 +103,12 @@ body > * {
 
 a {
   color: var(--accent-cyan);
-  text-decoration-color: rgba(110, 231, 255, 0.38);
+  text-decoration-color: rgba(98, 232, 255, 0.38);
   text-underline-offset: 0.16em;
 }
 
 a:hover {
-  color: #9df1ff;
+  color: #a6f3ff;
   text-decoration-color: currentColor;
 }
 
@@ -112,7 +125,7 @@ select {
   width: 100%;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
-  background: rgba(2, 8, 15, 0.46);
+  background: rgba(2, 8, 15, 0.62);
   color: var(--text-strong);
   outline: none;
   transition:
@@ -136,7 +149,7 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(220, 233, 244, 0.48);
+  color: rgba(213, 232, 239, 0.46);
 }
 
 input:focus-visible,
@@ -144,7 +157,7 @@ textarea:focus-visible,
 select:focus-visible,
 button:focus-visible,
 .lk-button:focus-visible {
-  border-color: rgba(110, 231, 255, 0.7);
+  border-color: rgba(62, 255, 178, 0.7);
   box-shadow: var(--focus-ring);
 }
 
@@ -152,7 +165,7 @@ input[type='checkbox'] {
   width: 1.15rem;
   height: 1.15rem;
   margin: 0;
-  accent-color: var(--accent-cyan);
+  accent-color: var(--accent-mint);
 }
 
 .lk-button,
@@ -162,11 +175,11 @@ a.lk-button {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
   background:
-    linear-gradient(135deg, rgba(110, 231, 255, 0.2), rgba(255, 116, 92, 0.14)),
-    rgba(255, 255, 255, 0.055);
+    linear-gradient(135deg, rgba(62, 255, 178, 0.15), rgba(98, 232, 255, 0.11)),
+    rgba(255, 255, 255, 0.045);
   color: var(--text-strong);
   font-weight: 700;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   transition:
     transform 160ms ease,
     border-color 160ms ease,
@@ -178,8 +191,8 @@ a.lk-button {
 button.lk-button:hover:not(:disabled) {
   border-color: var(--glass-border-strong);
   background:
-    linear-gradient(135deg, rgba(110, 231, 255, 0.27), rgba(255, 116, 92, 0.18)),
-    rgba(255, 255, 255, 0.08);
+    linear-gradient(135deg, rgba(62, 255, 178, 0.23), rgba(98, 232, 255, 0.16)),
+    rgba(255, 255, 255, 0.065);
   transform: translateY(-1px);
 }
 
@@ -191,15 +204,15 @@ button:disabled {
 
 .lk-button[aria-pressed='true'],
 .lk-button[data-lk-enabled='true'] {
-  border-color: rgba(110, 231, 255, 0.42);
-  background: linear-gradient(135deg, rgba(110, 231, 255, 0.34), rgba(28, 156, 194, 0.24));
+  border-color: rgba(62, 255, 178, 0.48);
+  background: linear-gradient(135deg, rgba(62, 255, 178, 0.38), rgba(20, 152, 181, 0.24));
   color: var(--text-strong);
 }
 
 .lk-button[data-lk-source='screen_share'][data-lk-enabled='true'],
 .lk-button[data-lk-source='camera'][data-lk-enabled='true'],
 .lk-button[data-lk-source='microphone'][data-lk-enabled='true'] {
-  border-color: rgba(110, 231, 255, 0.38);
+  border-color: rgba(62, 255, 178, 0.44);
 }
 
 .meeting-shell {
@@ -208,9 +221,20 @@ button:disabled {
   height: 100%;
   overflow: hidden;
   background:
-    linear-gradient(140deg, rgba(110, 231, 255, 0.12), transparent 34%),
-    linear-gradient(220deg, rgba(255, 116, 92, 0.12), transparent 38%),
+    linear-gradient(132deg, rgba(62, 255, 178, 0.08), transparent 32%),
+    linear-gradient(224deg, rgba(98, 232, 255, 0.09), transparent 36%),
     var(--page-bg);
+}
+
+.meeting-shell::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background-image:
+    linear-gradient(rgba(98, 232, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(98, 232, 255, 0.032) 1px, transparent 1px);
+  background-size: 42px 42px;
 }
 
 .prejoin-shell {
@@ -230,6 +254,22 @@ button:disabled {
   background: var(--glass-panel);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(26px) saturate(140%);
+}
+
+.room-alert-banner {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 191, 102, 0.34);
+  border-radius: var(--radius-sm);
+  color: #ffe8c2;
+  background: rgba(255, 191, 102, 0.15);
+  font-size: 0.9rem;
+}
+
+.room-alert-banner-error {
+  border-color: rgba(255, 107, 107, 0.35);
+  color: #ffd6d6;
+  background: rgba(255, 107, 107, 0.15);
 }
 
 .lk-prejoin {
@@ -253,7 +293,7 @@ button:disabled {
 .lk-prejoin .lk-video-container {
   overflow: hidden;
   border: 1px solid var(--glass-border);
-  background: rgba(0, 0, 0, 0.24);
+  background: rgba(0, 0, 0, 0.32);
   box-shadow: var(--shadow-soft);
 }
 
@@ -265,11 +305,84 @@ button:disabled {
   background: transparent;
 }
 
+.room-share-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(2, 8, 15, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.room-share-modal {
+  display: grid;
+  gap: 0.8rem;
+  width: min(100%, 560px);
+  padding: 1rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--glass-elevated);
+  box-shadow: var(--shadow-panel);
+}
+
+.room-share-modal h2 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.room-share-modal p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.room-share-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.room-share-field label {
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.room-share-field div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.room-share-field code {
+  min-width: 0;
+  padding: 0.55rem 0.62rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: rgba(8, 16, 26, 0.55);
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.room-share-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+}
+
 .lk-video-conference {
   overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  background: rgba(4, 10, 18, 0.48);
+  background:
+    linear-gradient(180deg, rgba(9, 22, 36, 0.82), rgba(3, 8, 14, 0.82)),
+    rgba(4, 10, 18, 0.62);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(18px) saturate(130%);
 }
@@ -283,10 +396,12 @@ button:disabled {
 
 .lk-participant-tile {
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(98, 232, 255, 0.13);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.045);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  background:
+    linear-gradient(180deg, rgba(98, 232, 255, 0.045), rgba(62, 255, 178, 0.026)),
+    rgba(255, 255, 255, 0.03);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
 }
 
 .lk-participant-tile::after {
@@ -294,24 +409,26 @@ button:disabled {
 }
 
 .lk-participant-tile[data-lk-speaking='true'] {
-  border-color: rgba(110, 231, 255, 0.72);
+  border-color: rgba(62, 255, 178, 0.82);
   box-shadow:
-    0 0 0 1px rgba(110, 231, 255, 0.28),
+    0 0 0 1px rgba(62, 255, 178, 0.25),
+    0 0 34px rgba(62, 255, 178, 0.12),
     0 18px 45px rgba(0, 0, 0, 0.34);
 }
 
 .lk-participant-placeholder {
   background:
-    linear-gradient(135deg, rgba(110, 231, 255, 0.1), rgba(255, 116, 92, 0.08)),
-    rgba(255, 255, 255, 0.045);
+    linear-gradient(135deg, rgba(62, 255, 178, 0.1), rgba(98, 232, 255, 0.08)),
+    rgba(255, 255, 255, 0.035);
 }
 
 .lk-participant-name,
 .lk-participant-metadata {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(2, 8, 15, 0.62);
+  border: 1px solid rgba(98, 232, 255, 0.14);
+  border-radius: var(--radius-sm);
+  background: rgba(2, 8, 15, 0.68);
   color: var(--text-soft);
+  font-family: var(--font-mono);
   backdrop-filter: blur(14px);
 }
 
@@ -320,10 +437,12 @@ button:disabled {
   width: fit-content;
   max-width: calc(100% - 1.25rem);
   margin: 0 auto 0.65rem;
-  padding: 0.45rem;
+  padding: 0.42rem;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  background: rgba(10, 18, 28, 0.72);
+  background:
+    linear-gradient(180deg, rgba(10, 24, 39, 0.86), rgba(4, 10, 18, 0.86)),
+    rgba(10, 18, 28, 0.76);
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(22px) saturate(150%);
 }
@@ -351,7 +470,7 @@ button:disabled {
 .lk-chat-header,
 .lk-chat-form {
   border-color: var(--glass-border);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(98, 232, 255, 0.035);
 }
 
 .lk-chat-entry {
@@ -359,7 +478,7 @@ button:disabled {
 }
 
 .lk-chat-entry[data-lk-message-origin='local'] {
-  background: rgba(110, 231, 255, 0.1);
+  background: rgba(62, 255, 178, 0.1);
 }
 
 .settings-menu {
@@ -379,7 +498,7 @@ button:disabled {
   padding: 0.8rem;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(98, 232, 255, 0.035);
 }
 
 .settings-menu .tab-content {
@@ -391,7 +510,7 @@ button:disabled {
   overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(98, 232, 255, 0.035);
 }
 
 .lk-button-group > .lk-button,
@@ -418,7 +537,7 @@ button:disabled {
 [role='status'].lk-button {
   border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-md);
-  background: rgba(24, 35, 48, 0.9);
+  background: rgba(9, 22, 36, 0.94);
   color: var(--text-strong);
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(18px);
@@ -447,17 +566,20 @@ button:disabled {
 
 footer {
   width: 100%;
-  padding: 1rem 2rem;
+  padding: 0.9rem 2rem;
   border-top: 1px solid var(--glass-border);
-  background: rgba(8, 13, 20, 0.72);
+  background: rgba(5, 12, 21, 0.78);
   color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
   text-align: center;
+  text-transform: uppercase;
   backdrop-filter: blur(18px);
 }
 
 footer a {
-  color: var(--accent-coral);
-  text-decoration-color: rgba(255, 116, 92, 0.38);
+  color: var(--accent-mint);
+  text-decoration-color: rgba(62, 255, 178, 0.38);
 }
 
 @supports not (backdrop-filter: blur(1px)) {
@@ -470,13 +592,22 @@ footer a {
   .lk-dialog,
   .lk-device-menu,
   footer {
-    background-color: #101824;
+    background-color: #08131f;
   }
 }
 
 @media (max-width: 760px) {
   .lk-room-container {
     padding: 0.4rem;
+  }
+
+  .room-share-field div {
+    grid-template-columns: 1fr;
+  }
+
+  .room-share-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .lk-video-conference {
@@ -491,6 +622,6 @@ footer a {
 
   footer {
     padding: 0.85rem 1rem;
-    font-size: 0.9rem;
+    font-size: 0.68rem;
   }
 }

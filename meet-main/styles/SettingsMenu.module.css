@@ -6,26 +6,26 @@
   padding: 0.35rem;
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(98, 232, 255, 0.035);
 }
 
 .tabs > .tab {
   justify-content: center;
   min-height: 2.55rem;
   border-color: transparent;
-  border-radius: calc(var(--radius-md) - 4px);
+  border-radius: calc(var(--radius-md) - 2px);
   background: transparent;
   color: var(--text-muted);
 }
 
 .tabs > .tab:hover {
   color: var(--text-strong);
-  background: rgba(255, 255, 255, 0.065);
+  background: rgba(98, 232, 255, 0.065);
 }
 
 .tabs > .tab[aria-pressed='true'] {
-  border-color: rgba(110, 231, 255, 0.34);
-  background: linear-gradient(135deg, rgba(110, 231, 255, 0.24), rgba(255, 116, 92, 0.13));
+  border-color: rgba(62, 255, 178, 0.46);
+  background: linear-gradient(135deg, rgba(62, 255, 178, 0.34), rgba(98, 232, 255, 0.2));
   color: var(--text-strong);
 }
 

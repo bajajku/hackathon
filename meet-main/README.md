@@ -40,3 +40,11 @@ Steps to get a local dev setup up and running:
 3. Update the missing environment variables in the newly created `.env.local` file.
 4. Run `pnpm dev` to start the development server and visit [http://localhost:3000](http://localhost:3000) to see the result.
 5. Start development 🎉
+
+## LAN testing (two devices)
+
+Use `pnpm dev:lan` to expose the app on your local network, then open `http://<your-lan-ip>:3000` on another device.
+
+- Room join works over LAN HTTP.
+- Camera/microphone are blocked by browsers on insecure HTTP contexts, so LAN HTTP runs in view-only mode.
+- Use HTTPS (or a secure tunnel) if you need camera/mic from other devices.

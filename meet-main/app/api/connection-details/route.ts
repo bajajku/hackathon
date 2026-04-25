@@ -1,64 +1,85 @@
 import { randomString } from '@/lib/client-utils';
 import { getLiveKitURL } from '@/lib/getLiveKitURL';
-import { ConnectionDetails } from '@/lib/types';
-import { AccessToken, AccessTokenOptions, VideoGrant } from 'livekit-server-sdk';
+import { ConnectionDetails, ParticipantRole } from '@/lib/types';
+import { mintParticipantToken } from '@/lib/livekitToken';
+import { getWorldById, getWorldByRoom } from '@/lib/worldStore';
+import { validateWorldForConnection } from '@/lib/connectionDetailsValidation';
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_KEY = process.env.LIVEKIT_API_KEY;
-const API_SECRET = process.env.LIVEKIT_API_SECRET;
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
 
 const COOKIE_KEY = 'random-participant-postfix';
 
 export async function GET(request: NextRequest) {
   try {
-    // Parse query parameters
-    const roomName = request.nextUrl.searchParams.get('roomName');
+    const roomNameRaw = request.nextUrl.searchParams.get('roomName');
+    const roomName = typeof roomNameRaw === 'string' ? roomNameRaw.trim() : roomNameRaw;
     const participantName = request.nextUrl.searchParams.get('participantName');
-    const metadata = request.nextUrl.searchParams.get('metadata') ?? '';
     const region = request.nextUrl.searchParams.get('region');
+    const worldIdParam = request.nextUrl.searchParams.get('worldId');
+
     if (!LIVEKIT_URL) {
       throw new Error('LIVEKIT_URL is not defined');
     }
     const livekitServerUrl = region ? getLiveKitURL(LIVEKIT_URL, region) : LIVEKIT_URL;
-    let randomParticipantPostfix = request.cookies.get(COOKIE_KEY)?.value;
     if (livekitServerUrl === undefined) {
       throw new Error('Invalid region');
     }
 
-    if (typeof roomName !== 'string') {
+    if (typeof roomName !== 'string' || roomName.length === 0) {
       return new NextResponse('Missing required query parameter: roomName', { status: 400 });
     }
     if (participantName === null) {
       return new NextResponse('Missing required query parameter: participantName', { status: 400 });
     }
 
-    // Generate participant token
+    let randomParticipantPostfix = request.cookies.get(COOKIE_KEY)?.value;
     if (!randomParticipantPostfix) {
       randomParticipantPostfix = randomString(4);
     }
-    const participantToken = await createParticipantToken(
-      {
-        identity: `${participantName}__${randomParticipantPostfix}`,
-        name: participantName,
-        metadata,
-      },
-      roomName,
-    );
+    const participantIdentity = `${participantName}__${randomParticipantPostfix}`;
 
-    // Return connection details
+    const worldByRoom = getWorldByRoom(roomName);
+    const worldById = worldIdParam ? getWorldById(worldIdParam) : null;
+    const validation = validateWorldForConnection({
+      roomName,
+      worldIdParam,
+      worldByRoom,
+      worldById,
+    });
+    if (!validation.ok) {
+      return new NextResponse(validation.message, { status: validation.status });
+    }
+
+    const worldId = validation.world.id;
+    const canonicalRoomName = validation.world.roomName;
+    const role: ParticipantRole =
+      participantIdentity === validation.world.hostIdentity ? 'host' : 'participant';
+
+    const participantToken = await mintParticipantToken({
+      identity: participantIdentity,
+      name: participantName,
+      roomName: canonicalRoomName,
+      metadata: { worldId, role },
+    });
+
     const data: ConnectionDetails = {
       serverUrl: livekitServerUrl,
-      roomName: roomName,
-      participantToken: participantToken,
-      participantName: participantName,
+      roomName: canonicalRoomName,
+      participantToken,
+      participantName,
+      worldId,
+      role,
     };
-    return new NextResponse(JSON.stringify(data), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': `${COOKIE_KEY}=${randomParticipantPostfix}; Path=/; HttpOnly; SameSite=Strict; Secure; Expires=${getCookieExpirationTime()}`,
-      },
+    const response = NextResponse.json(data);
+    response.cookies.set(COOKIE_KEY, randomParticipantPostfix, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production' || request.nextUrl.protocol === 'https:',
+      expires: getCookieExpirationTime(),
     });
+    return response;
   } catch (error) {
     if (error instanceof Error) {
       return new NextResponse(error.message, { status: 500 });
@@ -66,24 +87,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function createParticipantToken(userInfo: AccessTokenOptions, roomName: string) {
-  const at = new AccessToken(API_KEY, API_SECRET, userInfo);
-  at.ttl = '5m';
-  const grant: VideoGrant = {
-    room: roomName,
-    roomJoin: true,
-    canPublish: true,
-    canPublishData: true,
-    canSubscribe: true,
-  };
-  at.addGrant(grant);
-  return at.toJwt();
-}
-
-function getCookieExpirationTime(): string {
-  var now = new Date();
-  var time = now.getTime();
-  var expireTime = time + 60 * 120 * 1000;
+function getCookieExpirationTime(): Date {
+  const now = new Date();
+  const expireTime = now.getTime() + 60 * 120 * 1000;
   now.setTime(expireTime);
-  return now.toUTCString();
+  return now;
 }
