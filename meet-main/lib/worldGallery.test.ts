@@ -7,6 +7,10 @@ describe('worldGallery', () => {
     expect(sceneSrcForId(DEFAULT_WORLD_SCENE_ID)).toBe('/worlds/bedroom/index.html');
   });
 
+  it('resolves the library scene to the static iframe asset', () => {
+    expect(sceneSrcForId('library')).toBe('/worlds/library/index.html');
+  });
+
   it('returns null for missing and unknown scene ids', () => {
     expect(sceneSrcForId(null)).toBeNull();
     expect(sceneSrcForId(undefined)).toBeNull();

@@ -127,6 +127,32 @@ export async function postAiAudio(args: {
   }
 }
 
+export async function postAiTranscript(args: {
+  sessionId: string;
+  text: string;
+  timestampMs: number;
+  speaker?: string;
+  isFinal?: boolean;
+  source?: string;
+}): Promise<void> {
+  const response = await fetch(`/api/ai/session/${args.sessionId}/transcript`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      text: args.text,
+      timestampMs: args.timestampMs,
+      speaker: args.speaker ?? 'host',
+      isFinal: args.isFinal ?? true,
+      source: args.source ?? 'browser_speech_recognition',
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await parseJson<{ error?: string }>(response).catch(() => undefined);
+    throw new Error(extractErrorMessage(err) || `Failed to upload transcript (${response.status})`);
+  }
+}
+
 export async function stopAiSession(sessionId: string): Promise<void> {
   const response = await fetch(`/api/ai/session/${sessionId}/stop`, {
     method: 'POST',

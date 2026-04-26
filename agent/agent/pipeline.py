@@ -154,6 +154,30 @@ class SessionRuntime:
         }
         self.artifact_store.append_jsonl(self.artifacts.transcript_jsonl, persisted)
 
+    async def ingest_transcript(
+        self,
+        *,
+        text: str,
+        timestamp_ms: int,
+        speaker: str | None,
+        is_final: bool,
+        source: str,
+    ) -> None:
+        cleaned = text.strip()
+        if not cleaned:
+            return
+        await self._persist_transcript_chunk(
+            {
+                'speaker': speaker or 'host',
+                'text': cleaned,
+                'isFinal': is_final,
+                'source': source or 'browser_speech_recognition',
+                'startMs': timestamp_ms,
+                'endMs': None,
+                'observedAt': iso_now(),
+            }
+        )
+
     async def _transcribe_worker(self) -> None:
         while not self.stop_event.is_set() or not self.audio_queue.empty():
             try:
@@ -597,6 +621,25 @@ class SessionManager:
                 language_code=language_code,
                 speaker=speaker,
             )
+        )
+
+    async def ingest_transcript(
+        self,
+        *,
+        session_id: str,
+        text: str,
+        timestamp_ms: int,
+        speaker: str | None,
+        is_final: bool,
+        source: str,
+    ) -> None:
+        runtime = await self._get_runtime(session_id)
+        await runtime.ingest_transcript(
+            text=text,
+            timestamp_ms=timestamp_ms,
+            speaker=speaker,
+            is_final=is_final,
+            source=source,
         )
 
     async def stop_session(self, *, session_id: str) -> None:

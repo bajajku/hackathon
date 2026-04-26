@@ -104,6 +104,14 @@ async def test_start_frame_stop_generates_artifacts(tmp_path):
 
     session_id = await manager.start_session(room_name='demo-room', world_id='world-1')
     await manager.ingest_frame(session_id=session_id, timestamp_ms=1234, frame_bytes=b'fake-jpeg')
+    await manager.ingest_transcript(
+        session_id=session_id,
+        timestamp_ms=1500,
+        text='Browser transcript landed quickly.',
+        speaker='host',
+        is_final=True,
+        source='browser_speech_recognition',
+    )
     await manager.ingest_audio(
         session_id=session_id,
         timestamp_ms=2000,
@@ -129,3 +137,5 @@ async def test_start_frame_stop_generates_artifacts(tmp_path):
 
     transcripts = list(store.list_transcript_chunks(session_id, after_id=0, limit=50))
     assert any('chunk-' in (chunk.get('text') or '') for chunk in transcripts)
+    assert any('Browser transcript landed quickly.' in (chunk.get('text') or '') for chunk in transcripts)
+    assert any(chunk.get('source') == 'browser_speech_recognition' for chunk in transcripts)

@@ -33,6 +33,19 @@ class StopSessionResponse(BaseModel):
     status: str
 
 
+class TranscriptIngestRequest(BaseModel):
+    text: str = Field(min_length=1)
+    timestamp_ms: int = Field(alias='timestampMs')
+    speaker: str | None = None
+    is_final: bool = Field(default=True, alias='isFinal')
+    source: str = 'browser_speech_recognition'
+
+    model_config = {
+        'populate_by_name': True,
+        'str_strip_whitespace': True,
+    }
+
+
 class SessionStatusResponse(BaseModel):
     session_id: str = Field(alias='sessionId')
     room_name: str = Field(alias='roomName')
@@ -129,6 +142,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 sample_rate_hz=sample_rate_hz,
                 language_code=language_code,
                 speaker=speaker,
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail='Session not found')
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return {'ok': True}
+
+    @app.post('/sessions/{session_id}/transcript')
+    async def ingest_transcript(
+        session_id: str,
+        body: TranscriptIngestRequest,
+    ) -> dict[str, Any]:
+        try:
+            await session_manager.ingest_transcript(
+                session_id=session_id,
+                text=body.text,
+                timestamp_ms=body.timestamp_ms,
+                speaker=body.speaker,
+                is_final=body.is_final,
+                source=body.source,
             )
         except KeyError:
             raise HTTPException(status_code=404, detail='Session not found')
