@@ -12,6 +12,7 @@ import {
   fetchAiSessionStatus,
   postAiAudio,
   postAiFrame,
+  postAiTranscript,
   startAiSession,
   stopAiSession,
 } from '@/lib/aiSessionClient';
@@ -39,6 +40,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
 import { useLowCPUOptimizer } from '@/lib/usePerfomanceOptimiser';
+import { useBrowserSpeechTranscription } from '@/lib/useBrowserSpeechTranscription';
 import { WorldSessionProvider, useWorldSession } from '@/lib/useWorldSession';
 import { WorldWorkspace } from '@/lib/WorldWorkspace';
 import { WorldGalleryModal } from '@/lib/WorldGalleryModal';
@@ -55,6 +57,7 @@ const CONN_DETAILS_ENDPOINT =
   process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT ?? '/api/connection-details';
 const SHOW_SETTINGS_MENU = process.env.NEXT_PUBLIC_SHOW_SETTINGS_MENU == 'true';
 const AI_PIPELINE_ENABLED = process.env.NEXT_PUBLIC_AI_PIPELINE_ENABLED === 'true';
+const TRANSCRIPTION_MODE = process.env.NEXT_PUBLIC_TRANSCRIPTION_MODE ?? 'browser';
 const PUBLIC_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? '';
 const SCREEN_CAPTURE_INTERVAL_MS = 1000;
 const AUDIO_CAPTURE_INTERVAL_MS = 5000;
@@ -283,8 +286,12 @@ function VideoConferenceComponent(props: {
   const room = roomRef.current;
   const isHost = props.connectionDetails.role === 'host';
   const [aiSessionStatus, setAiSessionStatus] = React.useState<AiSessionStatus | null>(null);
+  const [aiSessionId, setAiSessionId] = React.useState<string | null>(null);
   const [aiPipelineError, setAiPipelineError] = React.useState<string | null>(null);
   const [aiPipelineUnavailable, setAiPipelineUnavailable] = React.useState(false);
+  const [localTranscriptSnippets, setLocalTranscriptSnippets] = React.useState<
+    Array<{ text: string; speaker: string; timestampMs: number }>
+  >([]);
   const aiSessionIdRef = React.useRef<string | null>(null);
   const frameVideoRef = React.useRef<HTMLVideoElement | null>(null);
   const frameCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
@@ -363,6 +370,7 @@ function VideoConferenceComponent(props: {
   const stopPipeline = React.useCallback(async () => {
     const sessionId = aiSessionIdRef.current;
     aiSessionIdRef.current = null;
+    setAiSessionId(null);
     if (!sessionId) return;
     try {
       await stopAiSession(sessionId);
@@ -378,6 +386,8 @@ function VideoConferenceComponent(props: {
         worldId: props.connectionDetails.worldId ?? undefined,
       });
       aiSessionIdRef.current = started.sessionId;
+      setAiSessionId(started.sessionId);
+      setLocalTranscriptSnippets([]);
       setAiPipelineError(null);
       setAiPipelineUnavailable(false);
       const status = await fetchAiSessionStatus(started.sessionId);
@@ -457,6 +467,53 @@ function VideoConferenceComponent(props: {
     },
     [uploadFrameBlob],
   );
+  const handleFinalBrowserTranscript = React.useCallback(
+    async (segment: { text: string; timestampMs: number; speaker: string; isFinal: boolean; source: string }) => {
+      const sessionId = aiSessionIdRef.current;
+      if (!sessionId) return;
+      setLocalTranscriptSnippets((prev) => [
+        {
+          text: segment.text,
+          speaker: segment.speaker,
+          timestampMs: segment.timestampMs,
+        },
+        ...prev,
+      ].slice(0, 4));
+      try {
+        await postAiTranscript({
+          sessionId,
+          text: segment.text,
+          timestampMs: segment.timestampMs,
+          speaker: segment.speaker,
+          isFinal: segment.isFinal,
+          source: segment.source,
+        });
+      } catch (error) {
+        console.error(error);
+        setAiPipelineError(getErrorMessageFromUnknown(error));
+      }
+    },
+    [],
+  );
+  const browserSpeech = useBrowserSpeechTranscription({
+    enabled:
+      AI_PIPELINE_ENABLED &&
+      TRANSCRIPTION_MODE !== 'server-audio' &&
+      isHost &&
+      !aiPipelineUnavailable &&
+      Boolean(aiSessionId),
+    speaker: 'host',
+    onFinalTranscript: handleFinalBrowserTranscript,
+    onError: (message) => {
+      console.warn(message);
+    },
+  });
+  const serverAudioTranscriptionEnabled =
+    AI_PIPELINE_ENABLED &&
+    isHost &&
+    !aiPipelineUnavailable &&
+    Boolean(aiSessionId) &&
+    (TRANSCRIPTION_MODE === 'server-audio' || !browserSpeech.supported);
 
   React.useEffect(() => {
     if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
@@ -503,7 +560,7 @@ function VideoConferenceComponent(props: {
   }, [aiPipelineUnavailable, isHost, uploadScreenFrame]);
 
   React.useEffect(() => {
-    if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
+    if (!serverAudioTranscriptionEnabled) return;
     if (typeof window === 'undefined') return;
     if (typeof window.MediaRecorder === 'undefined') return;
     if (!navigator?.mediaDevices?.getUserMedia) return;
@@ -627,7 +684,7 @@ function VideoConferenceComponent(props: {
       }
       audioStreamRef.current = null;
     };
-  }, [aiPipelineUnavailable, isHost]);
+  }, [serverAudioTranscriptionEnabled]);
 
   React.useEffect(() => {
     if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
@@ -736,6 +793,7 @@ function VideoConferenceComponent(props: {
   const [showTranscriptNotes, setShowTranscriptNotes] = React.useState(true);
   const [showVisionNotes, setShowVisionNotes] = React.useState(true);
   const recentTranscript = aiSessionStatus?.recentTranscript ?? [];
+  const localTranscriptVisible = localTranscriptSnippets.length > 0 || Boolean(browserSpeech.interimText);
   const recentVision = aiSessionStatus?.recentVision ?? [];
   const contentGeneration = aiSessionStatus?.contentGeneration ?? null;
   const contentGenerationSummary = React.useMemo(() => {
@@ -797,7 +855,27 @@ function VideoConferenceComponent(props: {
             {showTranscriptNotes && (
               <div className="ai-recap-block">
                 <h4>Transcript</h4>
-                {recentTranscript.length === 0 && <p>No transcript snippets yet.</p>}
+                {AI_PIPELINE_ENABLED && isHost && (
+                  <p>
+                    <strong>Transcription:</strong>{' '}
+                    {browserSpeech.supported && TRANSCRIPTION_MODE !== 'server-audio'
+                      ? browserSpeech.status
+                      : serverAudioTranscriptionEnabled
+                        ? 'Using server audio fallback'
+                        : 'Browser transcription unavailable'}
+                  </p>
+                )}
+                {browserSpeech.interimText && (
+                  <p>
+                    <strong>host:</strong> {truncateText(browserSpeech.interimText, 140)}
+                  </p>
+                )}
+                {localTranscriptSnippets.map((chunk) => (
+                  <p key={`${chunk.timestampMs}-${chunk.text}`}>
+                    <strong>{chunk.speaker}:</strong> {truncateText(chunk.text, 140)}
+                  </p>
+                ))}
+                {recentTranscript.length === 0 && !localTranscriptVisible && <p>No transcript snippets yet.</p>}
                 {recentTranscript.map((chunk, idx) => (
                   <p key={`${chunk.id ?? idx}-${chunk.createdAt ?? idx}`}>
                     <strong>{chunk.speaker ?? 'speaker'}:</strong> {truncateText(chunk.text, 140)}
@@ -896,7 +974,7 @@ function WorkspaceStage(props: {
           onClick={() => setGalleryOpen(true)}
           title="Open shared workspace"
         >
-          {sceneId ? 'Switch workspace' : 'Open workspace'}
+          {sceneId ? 'Workspace' : 'Open workspace'}
         </button>
       )}
       {galleryOpen && isHost && (
