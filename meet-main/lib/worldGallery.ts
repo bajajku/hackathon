@@ -6,9 +6,11 @@ export type WorldGalleryEntry = {
   accent: string;
 };
 
+export const DEFAULT_WORLD_SCENE_ID = 'bedroom';
+
 export const WORLD_GALLERY: ReadonlyArray<WorldGalleryEntry> = [
   {
-    id: 'bedroom',
+    id: DEFAULT_WORLD_SCENE_ID,
     title: 'Stone Bedroom',
     description: 'Lantern-lit medieval chamber. Drag to orbit, scroll to zoom.',
     src: '/worlds/bedroom/index.html',

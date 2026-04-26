@@ -43,7 +43,7 @@ import { WorldSessionProvider, useWorldSession } from '@/lib/useWorldSession';
 import { WorldWorkspace } from '@/lib/WorldWorkspace';
 import { WorldGalleryModal } from '@/lib/WorldGalleryModal';
 import { useWorkspaceSync } from '@/lib/useWorkspaceSync';
-import { sceneSrcForId } from '@/lib/worldGallery';
+import { DEFAULT_WORLD_SCENE_ID, sceneSrcForId } from '@/lib/worldGallery';
 import {
   ensureMediaDevicesShim,
   getErrorMessageFromUnknown,
@@ -842,14 +842,15 @@ function VideoConferenceComponent(props: {
       <RoomContext.Provider value={room}>
         <WorldSessionProvider connectionDetails={props.connectionDetails}>
           <KeyboardShortcuts />
-          <VideoConference
-            chatMessageFormatter={formatChatMessageLinks}
-            SettingsComponent={SHOW_SETTINGS_MENU ? SettingsMenu : undefined}
-          />
-          <WorkspaceLayer
+          <WorkspaceStage
             captureEnabled={AI_PIPELINE_ENABLED && isHost && !aiPipelineUnavailable}
             onCaptureFrame={uploadWorkspaceFrame}
-          />
+          >
+            <VideoConference
+              chatMessageFormatter={formatChatMessageLinks}
+              SettingsComponent={SHOW_SETTINGS_MENU ? SettingsMenu : undefined}
+            />
+          </WorkspaceStage>
           <DebugMode />
           <RecordingIndicator />
         </WorldSessionProvider>
@@ -862,17 +863,32 @@ function isAiPipelinePermissionIssue(message: string): boolean {
   return /(permission denied|forbidden|unauthorized|401|403)/i.test(message);
 }
 
-function WorkspaceLayer(props: {
+function WorkspaceStage(props: {
   captureEnabled: boolean;
   onCaptureFrame: (frame: Blob) => void | Promise<void>;
+  children: React.ReactNode;
 }) {
-  const { isHost } = useWorldSession();
+  const { isHost, worldId } = useWorldSession();
   const { sceneId, setSceneId } = useWorkspaceSync();
   const [galleryOpen, setGalleryOpen] = React.useState(false);
   const sceneSrc = sceneSrcForId(sceneId);
 
+  React.useEffect(() => {
+    if (isHost && sceneId === null && worldId) {
+      setSceneId(DEFAULT_WORLD_SCENE_ID);
+    }
+  }, [isHost, sceneId, worldId, setSceneId]);
+
   return (
-    <>
+    <div className={`meeting-stage${sceneSrc ? ' meeting-stage-with-workspace' : ''}`}>
+      <WorldWorkspace
+        sceneSrc={sceneSrc}
+        onClose={isHost ? () => setSceneId(null) : undefined}
+        captureEnabled={props.captureEnabled && isHost}
+        captureIntervalMs={SCREEN_CAPTURE_INTERVAL_MS}
+        onCaptureFrame={isHost ? props.onCaptureFrame : undefined}
+      />
+      <div className="meeting-video-panel">{props.children}</div>
       {isHost && (
         <button
           type="button"
@@ -883,13 +899,6 @@ function WorkspaceLayer(props: {
           {sceneId ? 'Switch workspace' : 'Open workspace'}
         </button>
       )}
-      <WorldWorkspace
-        sceneSrc={sceneSrc}
-        onClose={isHost ? () => setSceneId(null) : undefined}
-        captureEnabled={props.captureEnabled && isHost}
-        captureIntervalMs={SCREEN_CAPTURE_INTERVAL_MS}
-        onCaptureFrame={isHost ? props.onCaptureFrame : undefined}
-      />
       {galleryOpen && isHost && (
         <WorldGalleryModal
           currentSceneId={sceneId}
@@ -897,7 +906,7 @@ function WorkspaceLayer(props: {
           onClose={() => setGalleryOpen(false)}
         />
       )}
-    </>
+    </div>
   );
 }
 
