@@ -1,5 +1,5 @@
 [project]
-name = "notebooklm-api"
+name = "content-generation-api"
 version = "0.1.0"
 description = "REST API backend wrapping notebooklm-py for transcript-to-video and all artifact generation"
 requires-python = ">=3.10"

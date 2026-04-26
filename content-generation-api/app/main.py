@@ -7,9 +7,9 @@ from app.middleware.error_handler import register_error_handlers
 from app.routers import artifacts, auth, chat, downloads, notebooks, sources
 
 app = FastAPI(
-    title="NotebookLM API",
+    title="Content Generation API",
     version="0.1.0",
-    description="REST API backend wrapping notebooklm-py for transcript-to-video and all artifact generation",
+    description="REST API for AI-powered content generation (video, audio, quizzes, reports, etc.) from transcripts via notebooklm-py",
     lifespan=lifespan,
 )
 
