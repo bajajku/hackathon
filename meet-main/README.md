@@ -48,3 +48,22 @@ Use `pnpm dev:lan` to expose the app on your local network, then open `http://<y
 - Room join works over LAN HTTP.
 - Camera/microphone are blocked by browsers on insecure HTTP contexts, so LAN HTTP runs in view-only mode.
 - Use HTTPS (or a secure tunnel) if you need camera/mic from other devices.
+
+## AI Recap Pipeline (Optional)
+
+This repo can stream host screen-share frames and meeting transcript signals to a separate Python service.
+
+1. Start the agent service from `/Users/kunalbajaj/hackathon/agent`:
+   - `python3.13 -m venv .venv313`
+   - `source .venv313/bin/activate`
+   - `pip install -r requirements.txt`
+   - `cp .env.example .env`
+   - `uvicorn agent.main:app --host 0.0.0.0 --port 8787 --reload`
+2. In `meet-main/.env.local`, set:
+   - `NEXT_PUBLIC_AI_PIPELINE_ENABLED=true`
+   - `AI_AGENT_BASE_URL=http://127.0.0.1:8787`
+3. Join as host, start screen share, and the app will:
+   - start an AI session,
+   - sample screen frames at 1 fps,
+   - forward frames to the agent,
+   - poll rolling/final summaries.

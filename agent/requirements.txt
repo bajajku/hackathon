@@ -1,0 +1,12 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.9
+pillow==11.3.0
+python-multipart==0.0.20
+google-cloud-vision==3.10.2
+google-cloud-speech==2.33.0
+google-cloud-aiplatform==1.111.0
+livekit==1.0.10
+pytest==8.4.2
+pytest-asyncio==1.1.0
+httpx==0.28.1
