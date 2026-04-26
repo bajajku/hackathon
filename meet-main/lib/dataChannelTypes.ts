@@ -2,6 +2,7 @@ import type { ParticipantRole } from './types';
 
 export const TOUR_TOPIC = 'tour';
 export const CURSOR_TOPIC = 'cursor';
+export const WORKSPACE_TOPIC = 'workspace';
 
 export type Vec3 = [number, number, number];
 
@@ -22,6 +23,12 @@ export type CursorPacket = {
   v: 1;
   t: number;
   hit: { pos: Vec3; bId?: string } | null;
+};
+
+export type WorkspacePacket = {
+  v: 1;
+  t: number;
+  sceneId: string | null;
 };
 
 export function parseParticipantMetadata(raw: string | undefined): ParticipantMetadata | null {

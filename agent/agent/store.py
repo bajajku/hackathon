@@ -268,6 +268,38 @@ class SessionStore:
             for row in rows
         ]
 
+    def list_recent_transcript_chunks(
+        self,
+        session_id: str,
+        *,
+        limit: int = 6,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, created_at, speaker, start_ms, end_ms, text, is_final, source
+                  FROM transcript_chunks
+                 WHERE session_id = ?
+                 ORDER BY id DESC
+                 LIMIT ?
+                """,
+                (session_id, limit),
+            ).fetchall()
+        items = [
+            {
+                'id': row['id'],
+                'createdAt': row['created_at'],
+                'speaker': row['speaker'],
+                'startMs': row['start_ms'],
+                'endMs': row['end_ms'],
+                'text': row['text'],
+                'isFinal': bool(row['is_final']),
+                'source': row['source'],
+            }
+            for row in rows
+        ]
+        return list(reversed(items))
+
     def list_vision_events(
         self,
         session_id: str,
@@ -298,6 +330,37 @@ class SessionStore:
             }
             for row in rows
         ]
+
+    def list_recent_vision_events(
+        self,
+        session_id: str,
+        *,
+        limit: int = 6,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT id, created_at, frame_ts_ms, frame_hash, ocr_text, labels_json, error
+                  FROM vision_events
+                 WHERE session_id = ?
+                 ORDER BY id DESC
+                 LIMIT ?
+                """,
+                (session_id, limit),
+            ).fetchall()
+        items = [
+            {
+                'id': row['id'],
+                'createdAt': row['created_at'],
+                'frameTsMs': row['frame_ts_ms'],
+                'frameHash': row['frame_hash'],
+                'ocrText': row['ocr_text'],
+                'labelsJson': row['labels_json'],
+                'error': row['error'],
+            }
+            for row in rows
+        ]
+        return list(reversed(items))
 
     def list_summary_updates(
         self,

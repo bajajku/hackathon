@@ -24,6 +24,13 @@ class Settings:
     gcp_project: str | None
     gcp_location: str
     vertex_model: str
+    summarizer_backend: str = 'ollama'
+    ollama_base_url: str = 'http://127.0.0.1:11434'
+    ollama_model: str = 'gemma3:latest'
+    ollama_timeout_seconds: float = 45.0
+    content_generation_enabled: bool = False
+    content_generation_api_base_url: str = 'http://127.0.0.1:8000'
+    content_generation_timeout_seconds: float = 30.0
 
 
 def _env_int(name: str, fallback: int) -> int:
@@ -44,6 +51,13 @@ def _env_float(name: str, fallback: float) -> float:
         return float(raw)
     except ValueError as exc:
         raise ValueError(f'{name} must be a float') from exc
+
+
+def _env_bool(name: str, fallback: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == '':
+        return fallback
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def load_settings() -> Settings:
@@ -73,4 +87,17 @@ def load_settings() -> Settings:
         gcp_project=os.getenv('GCP_PROJECT'),
         gcp_location=os.getenv('GCP_LOCATION', 'us-central1'),
         vertex_model=os.getenv('VERTEX_MODEL', 'gemini-2.5-flash'),
+        summarizer_backend=os.getenv('SUMMARIZER_BACKEND', 'ollama').strip().lower(),
+        ollama_base_url=os.getenv('OLLAMA_BASE_URL', 'http://127.0.0.1:11434').strip(),
+        ollama_model=os.getenv('OLLAMA_MODEL', 'gemma3:latest').strip(),
+        ollama_timeout_seconds=_env_float('OLLAMA_TIMEOUT_SECONDS', 45.0),
+        content_generation_enabled=_env_bool('CONTENT_GENERATION_ENABLED', False),
+        content_generation_api_base_url=os.getenv(
+            'CONTENT_GENERATION_API_BASE_URL',
+            'http://127.0.0.1:8000',
+        ).strip(),
+        content_generation_timeout_seconds=_env_float(
+            'CONTENT_GENERATION_TIMEOUT_SECONDS',
+            30.0,
+        ),
     )
