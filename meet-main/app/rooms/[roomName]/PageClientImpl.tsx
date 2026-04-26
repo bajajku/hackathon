@@ -39,7 +39,11 @@ import {
 import { useRouter } from 'next/navigation';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
 import { useLowCPUOptimizer } from '@/lib/usePerfomanceOptimiser';
-import { WorldSessionProvider } from '@/lib/useWorldSession';
+import { WorldSessionProvider, useWorldSession } from '@/lib/useWorldSession';
+import { WorldWorkspace } from '@/lib/WorldWorkspace';
+import { WorldGalleryModal } from '@/lib/WorldGalleryModal';
+import { useWorkspaceSync } from '@/lib/useWorkspaceSync';
+import { sceneSrcForId } from '@/lib/worldGallery';
 import {
   ensureMediaDevicesShim,
   getErrorMessageFromUnknown,
@@ -51,6 +55,7 @@ const CONN_DETAILS_ENDPOINT =
   process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT ?? '/api/connection-details';
 const SHOW_SETTINGS_MENU = process.env.NEXT_PUBLIC_SHOW_SETTINGS_MENU == 'true';
 const AI_PIPELINE_ENABLED = process.env.NEXT_PUBLIC_AI_PIPELINE_ENABLED === 'true';
+const PUBLIC_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? '';
 const SCREEN_CAPTURE_INTERVAL_MS = 1000;
 const AUDIO_CAPTURE_INTERVAL_MS = 5000;
 const AUDIO_MIME_CANDIDATES = [
@@ -206,6 +211,7 @@ export function PageClientImpl(props: {
             singlePeerConnection: props.singlePeerConnection,
           }}
           showShareModal={showShareModal}
+          onOpenShareModal={() => setShowShareModal(true)}
           onCloseShareModal={() => setShowShareModal(false)}
         />
       )}
@@ -223,6 +229,7 @@ function VideoConferenceComponent(props: {
     singlePeerConnection: boolean;
   };
   showShareModal: boolean;
+  onOpenShareModal: () => void;
   onCloseShareModal: () => void;
 }) {
   const keyProvider = React.useMemo(() => new ExternalE2EEKeyProvider(), []);
@@ -277,10 +284,12 @@ function VideoConferenceComponent(props: {
   const isHost = props.connectionDetails.role === 'host';
   const [aiSessionStatus, setAiSessionStatus] = React.useState<AiSessionStatus | null>(null);
   const [aiPipelineError, setAiPipelineError] = React.useState<string | null>(null);
+  const [aiPipelineUnavailable, setAiPipelineUnavailable] = React.useState(false);
   const aiSessionIdRef = React.useRef<string | null>(null);
   const frameVideoRef = React.useRef<HTMLVideoElement | null>(null);
   const frameCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const frameUploadInFlightRef = React.useRef(false);
+  const workspaceFrameUploadInFlightRef = React.useRef(false);
   const activeScreenTrackRef = React.useRef<MediaStreamTrack | null>(null);
   const audioRecorderRef = React.useRef<MediaRecorder | null>(null);
   const audioStreamRef = React.useRef<MediaStream | null>(null);
@@ -362,7 +371,7 @@ function VideoConferenceComponent(props: {
     }
   }, []);
   const startPipeline = React.useCallback(async () => {
-    if (!AI_PIPELINE_ENABLED || !isHost || aiSessionIdRef.current) return;
+    if (!AI_PIPELINE_ENABLED || !isHost || aiSessionIdRef.current || aiPipelineUnavailable) return;
     try {
       const started = await startAiSession({
         roomName: props.connectionDetails.roomName,
@@ -370,13 +379,46 @@ function VideoConferenceComponent(props: {
       });
       aiSessionIdRef.current = started.sessionId;
       setAiPipelineError(null);
+      setAiPipelineUnavailable(false);
       const status = await fetchAiSessionStatus(started.sessionId);
       setAiSessionStatus(status);
     } catch (error) {
       console.error(error);
-      setAiPipelineError(getErrorMessageFromUnknown(error));
+      const message = getErrorMessageFromUnknown(error);
+      if (isAiPipelinePermissionIssue(message)) {
+        setAiPipelineUnavailable(true);
+        setAiPipelineError(null);
+        return;
+      }
+      setAiPipelineError(message);
     }
-  }, [isHost, props.connectionDetails.roomName, props.connectionDetails.worldId]);
+  }, [
+    aiPipelineUnavailable,
+    isHost,
+    props.connectionDetails.roomName,
+    props.connectionDetails.worldId,
+  ]);
+  const uploadFrameBlob = React.useCallback(
+    async (blob: Blob, inFlightRef: React.MutableRefObject<boolean>) => {
+      const sessionId = aiSessionIdRef.current;
+      if (!sessionId) return;
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        await postAiFrame({
+          sessionId,
+          frame: blob,
+          timestampMs: Date.now(),
+        });
+      } catch (error) {
+        console.error(error);
+        setAiPipelineError(getErrorMessageFromUnknown(error));
+      } finally {
+        inFlightRef.current = false;
+      }
+    },
+    [],
+  );
   const uploadScreenFrame = React.useCallback(async () => {
     const sessionId = aiSessionIdRef.current;
     const activeTrack = activeScreenTrackRef.current;
@@ -399,27 +441,25 @@ function VideoConferenceComponent(props: {
     if (!context) return;
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    frameUploadInFlightRef.current = true;
     try {
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob(resolve, 'image/jpeg', 0.72);
       });
       if (!blob) return;
-      await postAiFrame({
-        sessionId,
-        frame: blob,
-        timestampMs: Date.now(),
-      });
+      await uploadFrameBlob(blob, frameUploadInFlightRef);
     } catch (error) {
       console.error(error);
-      setAiPipelineError(getErrorMessageFromUnknown(error));
-    } finally {
-      frameUploadInFlightRef.current = false;
     }
-  }, []);
+  }, [uploadFrameBlob]);
+  const uploadWorkspaceFrame = React.useCallback(
+    async (blob: Blob) => {
+      await uploadFrameBlob(blob, workspaceFrameUploadInFlightRef);
+    },
+    [uploadFrameBlob],
+  );
 
   React.useEffect(() => {
-    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
     const handleLocalTrackPublished = () => syncScreenTrackFromRoom();
     const handleLocalTrackUnpublished = () => syncScreenTrackFromRoom();
     room.on(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
@@ -430,10 +470,10 @@ function VideoConferenceComponent(props: {
       room.off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
       assignScreenTrack(null);
     };
-  }, [assignScreenTrack, isHost, room, syncScreenTrackFromRoom]);
+  }, [aiPipelineUnavailable, assignScreenTrack, isHost, room, syncScreenTrackFromRoom]);
 
   React.useEffect(() => {
-    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
     const onConnected = () => {
       void startPipeline();
     };
@@ -452,18 +492,18 @@ function VideoConferenceComponent(props: {
       room.off(RoomEvent.Disconnected, onDisconnected);
       void stopPipeline();
     };
-  }, [isHost, room, startPipeline, stopPipeline]);
+  }, [aiPipelineUnavailable, isHost, room, startPipeline, stopPipeline]);
 
   React.useEffect(() => {
-    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
     const id = window.setInterval(() => {
       void uploadScreenFrame();
     }, SCREEN_CAPTURE_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [isHost, uploadScreenFrame]);
+  }, [aiPipelineUnavailable, isHost, uploadScreenFrame]);
 
   React.useEffect(() => {
-    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
     if (typeof window === 'undefined') return;
     if (typeof window.MediaRecorder === 'undefined') return;
     if (!navigator?.mediaDevices?.getUserMedia) return;
@@ -587,10 +627,10 @@ function VideoConferenceComponent(props: {
       }
       audioStreamRef.current = null;
     };
-  }, [isHost]);
+  }, [aiPipelineUnavailable, isHost]);
 
   React.useEffect(() => {
-    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    if (!AI_PIPELINE_ENABLED || !isHost || aiPipelineUnavailable) return;
     let cancelled = false;
 
     const poll = async () => {
@@ -617,7 +657,7 @@ function VideoConferenceComponent(props: {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [isHost]);
+  }, [aiPipelineUnavailable, isHost]);
 
   const handleError = React.useCallback((error: Error) => {
     console.error(error);
@@ -693,9 +733,31 @@ function VideoConferenceComponent(props: {
     }
   }, [lowPowerMode]);
 
+  const [showTranscriptNotes, setShowTranscriptNotes] = React.useState(true);
+  const [showVisionNotes, setShowVisionNotes] = React.useState(true);
+  const recentTranscript = aiSessionStatus?.recentTranscript ?? [];
+  const recentVision = aiSessionStatus?.recentVision ?? [];
+  const contentGeneration = aiSessionStatus?.contentGeneration ?? null;
+  const contentGenerationSummary = React.useMemo(() => {
+    if (!contentGeneration?.artifacts || contentGeneration.artifacts.length === 0) {
+      return '';
+    }
+    const done = contentGeneration.artifacts.filter((item) => item.status !== 'failed').length;
+    const failed = contentGeneration.artifacts.filter((item) => item.status === 'failed').length;
+    return `${done}/${contentGeneration.artifacts.length} submitted${failed > 0 ? `, ${failed} failed` : ''}`;
+  }, [contentGeneration]);
+
   return (
     <div className="lk-room-container">
-      {isHost && AI_PIPELINE_ENABLED && (
+      <button
+        type="button"
+        className="room-share-launcher lk-button"
+        onClick={props.onOpenShareModal}
+        title="Share room details"
+      >
+        Share room
+      </button>
+      {isHost && AI_PIPELINE_ENABLED && !aiPipelineUnavailable && (
         <div
           className={`room-alert-banner${aiPipelineError ? ' room-alert-banner-error' : ''}`}
           role={aiPipelineError ? 'alert' : 'status'}
@@ -704,6 +766,66 @@ function VideoConferenceComponent(props: {
             ? `AI recap pipeline error: ${aiPipelineError}`
             : `AI recap pipeline: ${aiSessionStatus?.status ?? 'initializing'}`}
         </div>
+      )}
+      {isHost && AI_PIPELINE_ENABLED && !aiPipelineUnavailable && (
+        <section className="ai-recap-panel" aria-label="Live transcript and vision snippets">
+          <div className="ai-recap-panel-header">
+            <strong>Live recap feed</strong>
+            <span>
+              Content generation:{' '}
+              {contentGeneration?.state ?? (aiSessionStatus?.status === 'processing_content' ? 'running' : 'idle')}
+              {contentGenerationSummary ? ` (${contentGenerationSummary})` : ''}
+            </span>
+          </div>
+          <div className="ai-recap-toggles">
+            <button
+              type="button"
+              className={`ai-recap-toggle${showTranscriptNotes ? ' ai-recap-toggle-on' : ''}`}
+              onClick={() => setShowTranscriptNotes((prev) => !prev)}
+            >
+              Transcript {showTranscriptNotes ? 'on' : 'off'}
+            </button>
+            <button
+              type="button"
+              className={`ai-recap-toggle${showVisionNotes ? ' ai-recap-toggle-on' : ''}`}
+              onClick={() => setShowVisionNotes((prev) => !prev)}
+            >
+              Vision {showVisionNotes ? 'on' : 'off'}
+            </button>
+          </div>
+          <div className="ai-recap-grid">
+            {showTranscriptNotes && (
+              <div className="ai-recap-block">
+                <h4>Transcript</h4>
+                {recentTranscript.length === 0 && <p>No transcript snippets yet.</p>}
+                {recentTranscript.map((chunk, idx) => (
+                  <p key={`${chunk.id ?? idx}-${chunk.createdAt ?? idx}`}>
+                    <strong>{chunk.speaker ?? 'speaker'}:</strong> {truncateText(chunk.text, 140)}
+                  </p>
+                ))}
+              </div>
+            )}
+            {showVisionNotes && (
+              <div className="ai-recap-block">
+                <h4>Vision</h4>
+                {recentVision.length === 0 && <p>No vision snippets yet.</p>}
+                {recentVision.map((event, idx) => (
+                  <p key={`${event.id ?? idx}-${event.createdAt ?? idx}`}>
+                    {event.error
+                      ? `Vision error: ${truncateText(event.error, 120)}`
+                      : `${truncateText(event.ocrText, 110)}${event.labels && event.labels.length > 0 ? ` [${event.labels.slice(0, 4).join(', ')}]` : ''}`}
+                  </p>
+                ))}
+              </div>
+            )}
+            {!showTranscriptNotes && !showVisionNotes && (
+              <div className="ai-recap-block">
+                <h4>Notes hidden</h4>
+                <p>Toggle Transcript or Vision to show live notes.</p>
+              </div>
+            )}
+          </div>
+        </section>
       )}
       {!props.mediaCaptureSupported && (
         <div className="room-alert-banner" role="status">
@@ -724,6 +846,10 @@ function VideoConferenceComponent(props: {
             chatMessageFormatter={formatChatMessageLinks}
             SettingsComponent={SHOW_SETTINGS_MENU ? SettingsMenu : undefined}
           />
+          <WorkspaceLayer
+            captureEnabled={AI_PIPELINE_ENABLED && isHost && !aiPipelineUnavailable}
+            onCaptureFrame={uploadWorkspaceFrame}
+          />
           <DebugMode />
           <RecordingIndicator />
         </WorldSessionProvider>
@@ -732,25 +858,90 @@ function VideoConferenceComponent(props: {
   );
 }
 
+function isAiPipelinePermissionIssue(message: string): boolean {
+  return /(permission denied|forbidden|unauthorized|401|403)/i.test(message);
+}
+
+function WorkspaceLayer(props: {
+  captureEnabled: boolean;
+  onCaptureFrame: (frame: Blob) => void | Promise<void>;
+}) {
+  const { isHost } = useWorldSession();
+  const { sceneId, setSceneId } = useWorkspaceSync();
+  const [galleryOpen, setGalleryOpen] = React.useState(false);
+  const sceneSrc = sceneSrcForId(sceneId);
+
+  return (
+    <>
+      {isHost && (
+        <button
+          type="button"
+          className="world-workspace-launcher lk-button"
+          onClick={() => setGalleryOpen(true)}
+          title="Open shared workspace"
+        >
+          {sceneId ? 'Switch workspace' : 'Open workspace'}
+        </button>
+      )}
+      <WorldWorkspace
+        sceneSrc={sceneSrc}
+        onClose={isHost ? () => setSceneId(null) : undefined}
+        captureEnabled={props.captureEnabled && isHost}
+        captureIntervalMs={SCREEN_CAPTURE_INTERVAL_MS}
+        onCaptureFrame={isHost ? props.onCaptureFrame : undefined}
+      />
+      {galleryOpen && isHost && (
+        <WorldGalleryModal
+          currentSceneId={sceneId}
+          onPick={setSceneId}
+          onClose={() => setGalleryOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
 function ShareRoomModal(props: { roomName: string; worldId?: string; onClose: () => void }) {
   const [copyMessage, setCopyMessage] = React.useState<string>('');
 
   const roomCode = props.roomName;
-  const shareLink = React.useMemo(() => {
+  const shareDetails = React.useMemo(() => {
     if (typeof window === 'undefined') {
-      return '';
+      return { link: '', hostName: '', isLocalAddress: false };
     }
-    const shareUrl = new URL(`/rooms/${props.roomName}`, window.location.origin);
+    let baseUrl = new URL(window.location.origin);
+    if (PUBLIC_SITE_URL) {
+      try {
+        baseUrl = new URL(PUBLIC_SITE_URL);
+      } catch (error) {
+        console.warn('Invalid NEXT_PUBLIC_SITE_URL, falling back to current origin.', error);
+      }
+    }
+
+    const shareUrl = new URL(`/rooms/${encodeURIComponent(props.roomName)}`, baseUrl);
     if (props.worldId) {
       shareUrl.searchParams.set('worldId', props.worldId);
     }
     if (window.location.hash) {
       shareUrl.hash = window.location.hash;
     }
-    return shareUrl.toString();
+
+    const hostName = baseUrl.hostname.toLowerCase();
+    const isLocalAddress =
+      hostName === 'localhost' ||
+      hostName === '127.0.0.1' ||
+      hostName === '::1' ||
+      hostName.endsWith('.local');
+
+    return { link: shareUrl.toString(), hostName, isLocalAddress };
   }, [props.roomName, props.worldId]);
+  const shareLink = shareDetails.link;
 
   const copyValue = React.useCallback(async (value: string, label: string) => {
+    if (!value) {
+      setCopyMessage(`No ${label.toLowerCase()} available yet.`);
+      return;
+    }
     const markCopied = () => {
       setCopyMessage(`${label} copied.`);
       window.setTimeout(() => setCopyMessage(''), 1500);
@@ -765,6 +956,10 @@ function ShareRoomModal(props: { roomName: string; worldId?: string; onClose: ()
         markCopied();
         return;
       }
+      if (window.prompt(`Copy ${label}:`, value) !== null) {
+        setCopyMessage(`Copied manually from prompt.`);
+        return;
+      }
       setCopyMessage(`Clipboard unavailable on HTTP. Copy the ${label.toLowerCase()} manually.`);
     } catch (error) {
       console.error(error);
@@ -772,15 +967,44 @@ function ShareRoomModal(props: { roomName: string; worldId?: string; onClose: ()
         markCopied();
         return;
       }
+      if (window.prompt(`Copy ${label}:`, value) !== null) {
+        setCopyMessage(`Copied manually from prompt.`);
+        return;
+      }
       setCopyMessage(`Clipboard blocked on HTTP. Copy the ${label.toLowerCase()} manually.`);
     }
   }, []);
+  const handleNativeShare = React.useCallback(async () => {
+    if (!shareLink || typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+      return;
+    }
+    try {
+      await navigator.share({
+        title: `Join room ${roomCode}`,
+        text: `Join my room with code ${roomCode}`,
+        url: shareLink,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+      console.error(error);
+      setCopyMessage('Native share failed. Copy the room code or link instead.');
+    }
+  }, [roomCode, shareLink]);
+  const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
   return (
     <div className="room-share-modal-backdrop" role="presentation">
       <section className="room-share-modal" role="dialog" aria-modal="true" aria-label="Share room">
         <h2>Room Ready</h2>
         <p>Share this room code or link so others can join the same session.</p>
+        {shareDetails.isLocalAddress && (
+          <p className="room-share-warning">
+            Link uses <code>{shareDetails.hostName}</code>. Others can only open it if they can reach
+            that address. Set <code>NEXT_PUBLIC_SITE_URL</code> to your public app URL for external sharing.
+          </p>
+        )}
         <div className="room-share-field">
           <label>Room code</label>
           <div>
@@ -809,6 +1033,11 @@ function ShareRoomModal(props: { roomName: string; worldId?: string; onClose: ()
         </div>
         <div className="room-share-footer">
           <span>{copyMessage}</span>
+          {canNativeShare && (
+            <button className="lk-button" type="button" onClick={handleNativeShare}>
+              Share…
+            </button>
+          )}
           <button className="lk-button" type="button" onClick={props.onClose}>
             Done
           </button>
@@ -825,6 +1054,12 @@ async function getErrorMessage(response: Response): Promise<string> {
   } catch {
     return `Request failed with status ${response.status}`;
   }
+}
+
+function truncateText(value: string | undefined, maxLength: number): string {
+  const text = (value ?? '').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 function legacyCopyToClipboard(value: string): boolean {

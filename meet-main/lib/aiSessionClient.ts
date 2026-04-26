@@ -4,6 +4,34 @@ export type AiSessionStatus = {
   worldId?: string | null;
   status: string;
   error?: string | null;
+  artifacts: Record<string, string>;
+  recentTranscript?: Array<{
+    id?: number;
+    createdAt?: number;
+    speaker?: string;
+    text?: string;
+  }>;
+  recentVision?: Array<{
+    id?: number;
+    createdAt?: number;
+    ocrText?: string;
+    labels?: string[];
+    error?: string | null;
+  }>;
+  contentGeneration?: {
+    state?: string;
+    startedAt?: string;
+    completedAt?: string;
+    notebookId?: string | null;
+    sourceId?: string | null;
+    error?: string | null;
+    artifacts?: Array<{
+      artifactType?: string;
+      status?: string;
+      taskId?: string | null;
+      error?: string | null;
+    }>;
+  } | null;
   latestRollingSummary?: {
     notes?: string;
     key_points?: string[];

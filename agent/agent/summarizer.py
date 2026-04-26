@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, Protocol
+
+import httpx
 
 
 def _clip(text: str, max_len: int) -> str:
@@ -81,6 +83,34 @@ class SummaryResult:
     model: str
 
 
+class Summarizer(Protocol):
+    def summarize_rolling(self, prompt: str) -> SummaryResult:
+        ...
+
+    def summarize_final(self, prompt: str) -> SummaryResult:
+        ...
+
+
+def _parse_json_text(text: str) -> dict[str, Any]:
+    text = text.strip()
+    if text.startswith('```'):
+        text = text.strip('`')
+        if '\n' in text:
+            text = text.split('\n', 1)[1]
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {
+            'summary': _clip(text, 3000),
+            'key_points': [],
+            'action_items': [],
+            'open_questions': [],
+            'confidence': 0.35,
+            'notes': 'Model returned non-JSON response.',
+        }
+
+
 class VertexGeminiSummarizer:
     def __init__(self, *, project: str | None, location: str, model: str) -> None:
         self._project = project
@@ -128,36 +158,62 @@ class VertexGeminiSummarizer:
                 errors.append(f'{model_name}: {type(exc).__name__}')
         raise RuntimeError('All Vertex model candidates failed: ' + '; '.join(errors))
 
-    def _parse_json_text(self, text: str) -> dict[str, Any]:
-        text = text.strip()
-        if text.startswith('```'):
-            text = text.strip('`')
-            if '\n' in text:
-                text = text.split('\n', 1)[1]
-        text = text.strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return {
-                'summary': _clip(text, 3000),
-                'key_points': [],
-                'action_items': [],
-                'open_questions': [],
-                'confidence': 0.35,
-                'notes': 'Model returned non-JSON response.',
-            }
-
     def summarize_rolling(self, prompt: str) -> SummaryResult:
         text, model_name = self._generate_text(prompt)
-        parsed = self._parse_json_text(text)
+        parsed = _parse_json_text(text)
         parsed.setdefault('generatedAt', datetime.now(timezone.utc).isoformat())
         return SummaryResult(payload=parsed, model=model_name)
 
     def summarize_final(self, prompt: str) -> SummaryResult:
         text, model_name = self._generate_text(prompt)
-        parsed = self._parse_json_text(text)
+        parsed = _parse_json_text(text)
         parsed.setdefault('generatedAt', datetime.now(timezone.utc).isoformat())
         return SummaryResult(payload=parsed, model=model_name)
+
+
+class OllamaSummarizer:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        model: str,
+        timeout_seconds: float = 45.0,
+    ) -> None:
+        self._base_url = base_url.rstrip('/')
+        self._model = model
+        self._timeout = timeout_seconds
+
+    def _generate_text(self, prompt: str) -> tuple[str, str]:
+        payload = {
+            'model': self._model,
+            'prompt': prompt,
+            'stream': False,
+            'format': 'json',
+        }
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.post(
+                f'{self._base_url}/api/generate',
+                json=payload,
+            )
+            response.raise_for_status()
+            body = response.json()
+
+        text = str(body.get('response') or '').strip()
+        if not text:
+            raise RuntimeError('Ollama returned an empty response payload')
+        return text, self._model
+
+    def summarize_rolling(self, prompt: str) -> SummaryResult:
+        text, model_name = self._generate_text(prompt)
+        parsed = _parse_json_text(text)
+        parsed.setdefault('generatedAt', datetime.now(timezone.utc).isoformat())
+        return SummaryResult(payload=parsed, model=f'ollama:{model_name}')
+
+    def summarize_final(self, prompt: str) -> SummaryResult:
+        text, model_name = self._generate_text(prompt)
+        parsed = _parse_json_text(text)
+        parsed.setdefault('generatedAt', datetime.now(timezone.utc).isoformat())
+        return SummaryResult(payload=parsed, model=f'ollama:{model_name}')
 
 
 class FallbackSummarizer:

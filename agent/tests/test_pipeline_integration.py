@@ -123,6 +123,9 @@ async def test_start_frame_stop_generates_artifacts(tmp_path):
     assert view['latestRollingSummary'] is not None
     assert view['finalSummary'] is not None
     assert view['finalSummary']['title'] == 'Final Summary'
+    assert view['recentTranscript']
+    assert view['recentVision']
+    assert view['contentGeneration']['state'] == 'disabled'
 
     transcripts = list(store.list_transcript_chunks(session_id, after_id=0, limit=50))
     assert any('chunk-' in (chunk.get('text') or '') for chunk in transcripts)

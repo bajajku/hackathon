@@ -12,6 +12,7 @@ class SessionArtifacts:
     vision_jsonl: Path
     rolling_summary_jsonl: Path
     final_summary_json: Path
+    content_generation_json: Path
 
 
 class ArtifactStore:
@@ -28,6 +29,7 @@ class ArtifactStore:
             vision_jsonl=session_dir / 'vision.jsonl',
             rolling_summary_jsonl=session_dir / 'rolling_summary.jsonl',
             final_summary_json=session_dir / 'final_summary.json',
+            content_generation_json=session_dir / 'content_generation.json',
         )
 
     @staticmethod

@@ -45,6 +45,9 @@ class SessionStatusResponse(BaseModel):
     artifacts: dict[str, str]
     latest_rolling_summary: dict[str, Any] | None = Field(alias='latestRollingSummary')
     final_summary: dict[str, Any] | None = Field(alias='finalSummary')
+    recent_transcript: list[dict[str, Any]] = Field(alias='recentTranscript')
+    recent_vision: list[dict[str, Any]] = Field(alias='recentVision')
+    content_generation: dict[str, Any] | None = Field(alias='contentGeneration')
 
 
 class HealthResponse(BaseModel):

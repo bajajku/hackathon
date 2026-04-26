@@ -10,9 +10,13 @@ from uuid import uuid4
 
 from .artifacts import ArtifactStore, SessionArtifacts
 from .config import Settings
+from .content_generation import ContentGenerationClient
 from .store import SessionStore
 from .summarizer import (
     FallbackSummarizer,
+    OllamaSummarizer,
+    Summarizer,
+    SummaryResult,
     VertexGeminiSummarizer,
     build_final_prompt,
     build_rolling_prompt,
@@ -57,7 +61,8 @@ class SessionRuntime:
         artifact_store: ArtifactStore,
         transcriber: GoogleSpeechTranscriber,
         vision_client: GoogleVisionClient,
-        summarizer: VertexGeminiSummarizer | FallbackSummarizer,
+        summarizer_primary: Summarizer,
+        summarizer_secondary: Summarizer | None,
     ) -> None:
         self.session_id = session_id
         self.room_name = room_name
@@ -67,7 +72,8 @@ class SessionRuntime:
         self.artifact_store = artifact_store
         self.transcriber = transcriber
         self.vision_client = vision_client
-        self.summarizer = summarizer
+        self.summarizer_primary = summarizer_primary
+        self.summarizer_secondary = summarizer_secondary
 
         self.stop_event = asyncio.Event()
         self.frame_queue: asyncio.Queue[FrameEnvelope] = asyncio.Queue(maxsize=settings.frame_queue_size)
@@ -78,6 +84,7 @@ class SessionRuntime:
         self._vision_last_dhash: str | None = None
         self._transcript_cursor_id: int = 0
         self._vision_cursor_id: int = 0
+        self._content_generation_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         created_at = now_ms()
@@ -127,12 +134,7 @@ class SessionRuntime:
                     self._record_runtime_error(task.exception())
 
         await self._generate_final_summary()
-        self.store.update_session_status(
-            self.session_id,
-            status='ready',
-            updated_at=now_ms(),
-            stopped_at=now_ms(),
-        )
+        await self._start_content_generation()
 
     def _record_runtime_error(self, error: BaseException) -> None:
         self.store.update_session_status(
@@ -267,6 +269,7 @@ class SessionRuntime:
             after_id=self._vision_cursor_id,
             limit=250,
         )
+        vision_events_for_prompt = self._decode_vision_events(vision_events)
 
         if not transcript_chunks and not vision_events:
             return
@@ -275,13 +278,9 @@ class SessionRuntime:
             room_name=self.room_name,
             session_id=self.session_id,
             transcripts=transcript_chunks,
-            vision_events=vision_events,
+            vision_events=vision_events_for_prompt,
         )
-        try:
-            result = await asyncio.to_thread(self.summarizer.summarize_rolling, prompt)
-        except Exception:
-            fallback = FallbackSummarizer()
-            result = await asyncio.to_thread(fallback.summarize_rolling, prompt)
+        result = await self._summarize(prompt=prompt, final=False)
         payload = {
             **result.payload,
             'model': result.model,
@@ -355,11 +354,7 @@ class SessionRuntime:
             vision_text=vision_text,
         )
 
-        try:
-            result = await asyncio.to_thread(self.summarizer.summarize_final, prompt)
-        except Exception:
-            fallback = FallbackSummarizer()
-            result = await asyncio.to_thread(fallback.summarize_final, prompt)
+        result = await self._summarize(prompt=prompt, final=True)
         payload = {
             **result.payload,
             'model': result.model,
@@ -376,6 +371,161 @@ class SessionRuntime:
             created_at=created_at,
         )
 
+    async def _summarize(self, *, prompt: str, final: bool) -> SummaryResult:
+        errors: list[str] = []
+        for summarizer in [self.summarizer_primary, self.summarizer_secondary]:
+            if summarizer is None:
+                continue
+            try:
+                if final:
+                    return await asyncio.to_thread(summarizer.summarize_final, prompt)
+                return await asyncio.to_thread(summarizer.summarize_rolling, prompt)
+            except Exception as exc:
+                errors.append(f'{type(exc).__name__}: {exc}')
+
+        fallback = FallbackSummarizer()
+        if final:
+            result = await asyncio.to_thread(fallback.summarize_final, prompt)
+        else:
+            result = await asyncio.to_thread(fallback.summarize_rolling, prompt)
+        if errors:
+            result.payload['notes'] = (
+                f"{result.payload.get('notes', '')} Primary summarizers failed: "
+                + '; '.join(errors[:3])
+            ).strip()
+        return result
+
+    def _decode_vision_events(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        decoded: list[dict[str, Any]] = []
+        for event in events:
+            labels_raw = event.get('labelsJson') or '[]'
+            try:
+                labels = json.loads(labels_raw)
+            except json.JSONDecodeError:
+                labels = []
+            decoded.append(
+                {
+                    **event,
+                    'labels': labels if isinstance(labels, list) else [],
+                }
+            )
+        return decoded
+
+    async def _start_content_generation(self) -> None:
+        stopped_ms = now_ms()
+        if not self.settings.content_generation_enabled:
+            payload = {
+                'state': 'disabled',
+                'generatedAt': iso_now(),
+                'error': None,
+            }
+            self.artifact_store.write_json(self.artifacts.content_generation_json, payload)
+            self.store.update_session_status(
+                self.session_id,
+                status='ready',
+                updated_at=stopped_ms,
+                stopped_at=stopped_ms,
+            )
+            return
+
+        if not self.settings.content_generation_api_base_url:
+            payload = {
+                'state': 'failed',
+                'generatedAt': iso_now(),
+                'error': 'CONTENT_GENERATION_API_BASE_URL is not configured',
+            }
+            self.artifact_store.write_json(self.artifacts.content_generation_json, payload)
+            self.store.update_session_status(
+                self.session_id,
+                status='ready',
+                updated_at=stopped_ms,
+                stopped_at=stopped_ms,
+                error=str(payload['error']),
+            )
+            return
+
+        started_payload = {
+            'state': 'running',
+            'startedAt': iso_now(),
+            'notebookId': None,
+            'sourceId': None,
+            'artifacts': [],
+            'error': None,
+        }
+        self.artifact_store.write_json(self.artifacts.content_generation_json, started_payload)
+        self.store.update_session_status(
+            self.session_id,
+            status='processing_content',
+            updated_at=stopped_ms,
+            stopped_at=stopped_ms,
+        )
+        self._content_generation_task = asyncio.create_task(
+            self._run_content_generation_job(),
+            name=f'content-generation:{self.session_id}',
+        )
+
+    async def _run_content_generation_job(self) -> None:
+        client = ContentGenerationClient(
+            base_url=self.settings.content_generation_api_base_url,
+            timeout_seconds=self.settings.content_generation_timeout_seconds,
+        )
+        meeting_title = f'Meeting recap - {self.room_name} - {self.session_id}'
+        source_text = self._compose_content_generation_source()
+        try:
+            prior_state = self.artifact_store.read_json(self.artifacts.content_generation_json) or {}
+            result = await client.generate_all(
+                notebook_title=meeting_title,
+                source_title='Meeting transcript and visual context',
+                source_content=source_text,
+            )
+            payload = {
+                'state': 'completed',
+                'startedAt': prior_state.get('startedAt', iso_now()),
+                'completedAt': iso_now(),
+                'notebookId': result.get('notebookId'),
+                'sourceId': result.get('sourceId'),
+                'artifacts': result.get('artifacts', []),
+                'error': None,
+            }
+            self.artifact_store.write_json(self.artifacts.content_generation_json, payload)
+            self.store.update_session_status(
+                self.session_id,
+                status='ready',
+                updated_at=now_ms(),
+            )
+        except Exception as exc:
+            payload = {
+                'state': 'failed',
+                'completedAt': iso_now(),
+                'error': f'{type(exc).__name__}: {exc}',
+            }
+            self.artifact_store.write_json(self.artifacts.content_generation_json, payload)
+            self.store.update_session_status(
+                self.session_id,
+                status='ready',
+                updated_at=now_ms(),
+                error=str(payload['error']),
+            )
+
+    def _compose_content_generation_source(self) -> str:
+        transcript = self._collect_full_transcript_text()
+        vision = self._collect_full_vision_text()
+        final_summary = self.artifact_store.read_json(self.artifacts.final_summary_json) or {}
+
+        parts = [
+            '# Final Summary JSON',
+            json.dumps(final_summary, ensure_ascii=True, indent=2),
+            '',
+            '# Transcript',
+            transcript,
+            '',
+            '# Vision Timeline',
+            vision,
+        ]
+        source = '\n'.join(parts).strip()
+        # Keep payload bounded for upstream API limits while preserving useful context.
+        return source[:100_000]
+
 
 class SessionManager:
     def __init__(
@@ -386,7 +536,7 @@ class SessionManager:
         artifact_store: ArtifactStore,
         transcriber: GoogleSpeechTranscriber | None = None,
         vision_client: GoogleVisionClient | None = None,
-        summarizer: VertexGeminiSummarizer | FallbackSummarizer | None = None,
+        summarizer: Summarizer | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -394,11 +544,11 @@ class SessionManager:
 
         self.transcriber = transcriber or GoogleSpeechTranscriber()
         self.vision_client = vision_client or GoogleVisionClient()
-        self.summarizer: VertexGeminiSummarizer | FallbackSummarizer = summarizer or VertexGeminiSummarizer(
-            project=settings.gcp_project,
-            location=settings.gcp_location,
-            model=settings.vertex_model,
-        )
+        if summarizer is not None:
+            self.summarizer_primary: Summarizer = summarizer
+            self.summarizer_secondary: Summarizer | None = None
+        else:
+            self.summarizer_primary, self.summarizer_secondary = self._build_summarizer_chain()
 
         self._runtimes: dict[str, SessionRuntime] = {}
         self._lock = asyncio.Lock()
@@ -414,7 +564,8 @@ class SessionManager:
             artifact_store=self.artifact_store,
             transcriber=self.transcriber,
             vision_client=self.vision_client,
-            summarizer=self.summarizer,
+            summarizer_primary=self.summarizer_primary,
+            summarizer_secondary=self.summarizer_secondary,
         )
         await runtime.start()
         async with self._lock:
@@ -468,6 +619,15 @@ class SessionManager:
 
         latest_rolling = self.artifact_store.read_last_jsonl(Path(row.rolling_summary_path))
         final_summary = self.artifact_store.read_json(Path(row.final_summary_path))
+        content_generation_path = Path(row.final_summary_path).parent / 'content_generation.json'
+        content_generation = self.artifact_store.read_json(content_generation_path)
+
+        recent_transcript = self._build_recent_transcript_view(
+            self.store.list_recent_transcript_chunks(session_id, limit=4)
+        )
+        recent_vision = self._build_recent_vision_view(
+            self.store.list_recent_vision_events(session_id, limit=4)
+        )
 
         return {
             'sessionId': row.id,
@@ -483,7 +643,67 @@ class SessionManager:
                 'visionJsonl': row.vision_path,
                 'rollingSummaryJsonl': row.rolling_summary_path,
                 'finalSummaryJson': row.final_summary_path,
+                'contentGenerationJson': str(content_generation_path),
             },
             'latestRollingSummary': latest_rolling,
             'finalSummary': final_summary,
+            'recentTranscript': recent_transcript,
+            'recentVision': recent_vision,
+            'contentGeneration': content_generation,
         }
+
+    def _build_summarizer_chain(self) -> tuple[Summarizer, Summarizer]:
+        vertex = VertexGeminiSummarizer(
+            project=self.settings.gcp_project,
+            location=self.settings.gcp_location,
+            model=self.settings.vertex_model,
+        )
+        ollama = OllamaSummarizer(
+            base_url=self.settings.ollama_base_url,
+            model=self.settings.ollama_model,
+            timeout_seconds=self.settings.ollama_timeout_seconds,
+        )
+        backend = self.settings.summarizer_backend.strip().lower()
+        if backend == 'vertex':
+            return vertex, ollama
+        return ollama, vertex
+
+    def _build_recent_transcript_view(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for item in items:
+            text = str(item.get('text') or '').strip()
+            if not text:
+                continue
+            output.append(
+                {
+                    'id': item.get('id'),
+                    'createdAt': item.get('createdAt'),
+                    'speaker': item.get('speaker') or 'speaker',
+                    'text': text[:220],
+                }
+            )
+        return output
+
+    def _build_recent_vision_view(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for item in items:
+            labels_raw = item.get('labelsJson') or '[]'
+            try:
+                labels_value = json.loads(labels_raw)
+                labels = labels_value if isinstance(labels_value, list) else []
+            except json.JSONDecodeError:
+                labels = []
+            ocr_text = str(item.get('ocrText') or '').strip()
+            error = item.get('error')
+            if not error and not ocr_text and not labels:
+                continue
+            output.append(
+                {
+                    'id': item.get('id'),
+                    'createdAt': item.get('createdAt'),
+                    'ocrText': ocr_text[:180],
+                    'labels': labels[:8],
+                    'error': error,
+                }
+            )
+        return output

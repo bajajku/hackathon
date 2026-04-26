@@ -29,3 +29,4 @@ Each session writes to `agent/data/sessions/{sessionId}`:
 - `vision.jsonl`
 - `rolling_summary.jsonl`
 - `final_summary.json`
+- `content_generation.json` (optional post-meeting background run state)
