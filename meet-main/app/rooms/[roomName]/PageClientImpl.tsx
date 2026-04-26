@@ -8,6 +8,14 @@ import { RecordingIndicator } from '@/lib/RecordingIndicator';
 import { SettingsMenu } from '@/lib/SettingsMenu';
 import { ConnectionDetails } from '@/lib/types';
 import {
+  AiSessionStatus,
+  fetchAiSessionStatus,
+  postAiAudio,
+  postAiFrame,
+  startAiSession,
+  stopAiSession,
+} from '@/lib/aiSessionClient';
+import {
   formatChatMessageLinks,
   LocalUserChoices,
   PreJoin,
@@ -24,7 +32,9 @@ import {
   RoomConnectOptions,
   RoomEvent,
   TrackPublishDefaults,
+  Track,
   VideoCaptureOptions,
+  ConnectionState,
 } from 'livekit-client';
 import { useRouter } from 'next/navigation';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
@@ -40,6 +50,13 @@ import {
 const CONN_DETAILS_ENDPOINT =
   process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT ?? '/api/connection-details';
 const SHOW_SETTINGS_MENU = process.env.NEXT_PUBLIC_SHOW_SETTINGS_MENU == 'true';
+const AI_PIPELINE_ENABLED = process.env.NEXT_PUBLIC_AI_PIPELINE_ENABLED === 'true';
+const SCREEN_CAPTURE_INTERVAL_MS = 1000;
+const AUDIO_CAPTURE_INTERVAL_MS = 5000;
+const AUDIO_MIME_CANDIDATES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+];
 
 export function PageClientImpl(props: {
   roomName: string;
@@ -257,6 +274,18 @@ function VideoConferenceComponent(props: {
     roomRef.current = new Room(roomOptions);
   }
   const room = roomRef.current;
+  const isHost = props.connectionDetails.role === 'host';
+  const [aiSessionStatus, setAiSessionStatus] = React.useState<AiSessionStatus | null>(null);
+  const [aiPipelineError, setAiPipelineError] = React.useState<string | null>(null);
+  const aiSessionIdRef = React.useRef<string | null>(null);
+  const frameVideoRef = React.useRef<HTMLVideoElement | null>(null);
+  const frameCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const frameUploadInFlightRef = React.useRef(false);
+  const activeScreenTrackRef = React.useRef<MediaStreamTrack | null>(null);
+  const audioRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioStreamRef = React.useRef<MediaStream | null>(null);
+  const audioMimeRef = React.useRef<string>('audio/webm;codecs=opus');
+  const audioUploadInFlightRef = React.useRef(false);
 
   React.useEffect(() => {
     if (e2eeEnabled) {
@@ -288,6 +317,308 @@ function VideoConferenceComponent(props: {
 
   const router = useRouter();
   const handleOnLeave = React.useCallback(() => router.push('/'), [router]);
+  const assignScreenTrack = React.useCallback((track: MediaStreamTrack | null) => {
+    activeScreenTrackRef.current = track;
+    if (!track) {
+      if (frameVideoRef.current) {
+        frameVideoRef.current.srcObject = null;
+      }
+      return;
+    }
+
+    if (!frameVideoRef.current) {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      frameVideoRef.current = video;
+    }
+
+    const stream = new MediaStream([track]);
+    frameVideoRef.current.srcObject = stream;
+    void frameVideoRef.current.play().catch(() => {
+      // noop: browser may require explicit interaction; next frame tick retries naturally.
+    });
+  }, []);
+  const syncScreenTrackFromRoom = React.useCallback(() => {
+    const publication = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+    const mediaTrack = publication?.videoTrack?.mediaStreamTrack ?? null;
+    if (
+      mediaTrack?.id &&
+      activeScreenTrackRef.current?.id &&
+      mediaTrack.id === activeScreenTrackRef.current.id
+    ) {
+      return;
+    }
+    assignScreenTrack(mediaTrack);
+  }, [assignScreenTrack, room]);
+  const stopPipeline = React.useCallback(async () => {
+    const sessionId = aiSessionIdRef.current;
+    aiSessionIdRef.current = null;
+    if (!sessionId) return;
+    try {
+      await stopAiSession(sessionId);
+    } catch (error) {
+      console.error(error);
+    }
+  }, []);
+  const startPipeline = React.useCallback(async () => {
+    if (!AI_PIPELINE_ENABLED || !isHost || aiSessionIdRef.current) return;
+    try {
+      const started = await startAiSession({
+        roomName: props.connectionDetails.roomName,
+        worldId: props.connectionDetails.worldId ?? undefined,
+      });
+      aiSessionIdRef.current = started.sessionId;
+      setAiPipelineError(null);
+      const status = await fetchAiSessionStatus(started.sessionId);
+      setAiSessionStatus(status);
+    } catch (error) {
+      console.error(error);
+      setAiPipelineError(getErrorMessageFromUnknown(error));
+    }
+  }, [isHost, props.connectionDetails.roomName, props.connectionDetails.worldId]);
+  const uploadScreenFrame = React.useCallback(async () => {
+    const sessionId = aiSessionIdRef.current;
+    const activeTrack = activeScreenTrackRef.current;
+    const video = frameVideoRef.current;
+    if (!sessionId || !activeTrack || !video) return;
+    if (frameUploadInFlightRef.current) return;
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    if (video.videoWidth <= 1 || video.videoHeight <= 1) return;
+
+    if (!frameCanvasRef.current) {
+      frameCanvasRef.current = document.createElement('canvas');
+    }
+    const canvas = frameCanvasRef.current;
+    const maxWidth = 1280;
+    const scale = Math.min(1, maxWidth / video.videoWidth);
+    canvas.width = Math.max(2, Math.floor(video.videoWidth * scale));
+    canvas.height = Math.max(2, Math.floor(video.videoHeight * scale));
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    frameUploadInFlightRef.current = true;
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.72);
+      });
+      if (!blob) return;
+      await postAiFrame({
+        sessionId,
+        frame: blob,
+        timestampMs: Date.now(),
+      });
+    } catch (error) {
+      console.error(error);
+      setAiPipelineError(getErrorMessageFromUnknown(error));
+    } finally {
+      frameUploadInFlightRef.current = false;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    const handleLocalTrackPublished = () => syncScreenTrackFromRoom();
+    const handleLocalTrackUnpublished = () => syncScreenTrackFromRoom();
+    room.on(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
+    room.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
+    syncScreenTrackFromRoom();
+    return () => {
+      room.off(RoomEvent.LocalTrackPublished, handleLocalTrackPublished);
+      room.off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
+      assignScreenTrack(null);
+    };
+  }, [assignScreenTrack, isHost, room, syncScreenTrackFromRoom]);
+
+  React.useEffect(() => {
+    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    const onConnected = () => {
+      void startPipeline();
+    };
+    const onDisconnected = () => {
+      void stopPipeline();
+    };
+    room.on(RoomEvent.Connected, onConnected);
+    room.on(RoomEvent.Disconnected, onDisconnected);
+
+    if (room.state === ConnectionState.Connected) {
+      void startPipeline();
+    }
+
+    return () => {
+      room.off(RoomEvent.Connected, onConnected);
+      room.off(RoomEvent.Disconnected, onDisconnected);
+      void stopPipeline();
+    };
+  }, [isHost, room, startPipeline, stopPipeline]);
+
+  React.useEffect(() => {
+    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    const id = window.setInterval(() => {
+      void uploadScreenFrame();
+    }, SCREEN_CAPTURE_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [isHost, uploadScreenFrame]);
+
+  React.useEffect(() => {
+    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    if (typeof window === 'undefined') return;
+    if (typeof window.MediaRecorder === 'undefined') return;
+    if (!navigator?.mediaDevices?.getUserMedia) return;
+
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const supportedMime =
+      AUDIO_MIME_CANDIDATES.find((mime) => MediaRecorder.isTypeSupported(mime)) ?? '';
+    if (!supportedMime) {
+      console.warn('No supported MediaRecorder mime type for audio capture');
+      return;
+    }
+    audioMimeRef.current = supportedMime;
+
+    const captureChunk = () =>
+      new Promise<Blob | null>((resolve) => {
+        const stream = audioStreamRef.current;
+        if (!stream) return resolve(null);
+        let recorder: MediaRecorder;
+        try {
+          recorder = new MediaRecorder(stream, { mimeType: supportedMime });
+        } catch (error) {
+          console.error('Failed to start MediaRecorder', error);
+          return resolve(null);
+        }
+        audioRecorderRef.current = recorder;
+        const parts: BlobPart[] = [];
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) parts.push(event.data);
+        };
+        recorder.onerror = (event) => {
+          console.error('MediaRecorder error', event);
+          resolve(null);
+        };
+        recorder.onstop = () => {
+          if (parts.length === 0) return resolve(null);
+          resolve(new Blob(parts, { type: supportedMime }));
+        };
+        recorder.start();
+        window.setTimeout(() => {
+          if (recorder.state !== 'inactive') {
+            try {
+              recorder.stop();
+            } catch (error) {
+              console.error('Failed to stop MediaRecorder', error);
+              resolve(null);
+            }
+          }
+        }, AUDIO_CAPTURE_INTERVAL_MS);
+      });
+
+    const tick = async () => {
+      const sessionId = aiSessionIdRef.current;
+      if (!sessionId) return;
+      if (audioUploadInFlightRef.current) return;
+      audioUploadInFlightRef.current = true;
+      const startMs = Date.now();
+      try {
+        const blob = await captureChunk();
+        if (cancelled || !blob) return;
+        await postAiAudio({
+          sessionId,
+          audio: blob,
+          timestampMs: startMs,
+          encoding: 'WEBM_OPUS',
+          sampleRateHz: 48000,
+          languageCode: 'en-US',
+          speaker: 'host',
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error);
+          setAiPipelineError(getErrorMessageFromUnknown(error));
+        }
+      } finally {
+        audioUploadInFlightRef.current = false;
+      }
+    };
+
+    const start = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+          video: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        audioStreamRef.current = stream;
+        void tick();
+        intervalId = window.setInterval(() => {
+          void tick();
+        }, AUDIO_CAPTURE_INTERVAL_MS);
+      } catch (error) {
+        console.error('Failed to acquire microphone for transcription', error);
+        if (!cancelled) {
+          setAiPipelineError(getErrorMessageFromUnknown(error));
+        }
+      }
+    };
+
+    void start();
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== null) window.clearInterval(intervalId);
+      const recorder = audioRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        try {
+          recorder.stop();
+        } catch {
+          // ignore
+        }
+      }
+      audioRecorderRef.current = null;
+      const stream = audioStreamRef.current;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+      audioStreamRef.current = null;
+    };
+  }, [isHost]);
+
+  React.useEffect(() => {
+    if (!AI_PIPELINE_ENABLED || !isHost) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      const sessionId = aiSessionIdRef.current;
+      if (!sessionId) return;
+      try {
+        const status = await fetchAiSessionStatus(sessionId);
+        if (cancelled) return;
+        setAiSessionStatus(status);
+        if (status.error) {
+          setAiPipelineError(status.error);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setAiPipelineError(getErrorMessageFromUnknown(error));
+      }
+    };
+
+    void poll();
+    const id = window.setInterval(() => {
+      void poll();
+    }, 10000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [isHost]);
+
   const handleError = React.useCallback((error: Error) => {
     console.error(error);
     if (isLikelyMediaCaptureError(error)) {
@@ -364,6 +695,16 @@ function VideoConferenceComponent(props: {
 
   return (
     <div className="lk-room-container">
+      {isHost && AI_PIPELINE_ENABLED && (
+        <div
+          className={`room-alert-banner${aiPipelineError ? ' room-alert-banner-error' : ''}`}
+          role={aiPipelineError ? 'alert' : 'status'}
+        >
+          {aiPipelineError
+            ? `AI recap pipeline error: ${aiPipelineError}`
+            : `AI recap pipeline: ${aiSessionStatus?.status ?? 'initializing'}`}
+        </div>
+      )}
       {!props.mediaCaptureSupported && (
         <div className="room-alert-banner" role="status">
           Joined without camera and mic on insecure HTTP. Use HTTPS for full media access.
