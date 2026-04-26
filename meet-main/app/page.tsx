@@ -1,337 +1,337 @@
 'use client';
 
-import Image from 'next/image';
-import { useRouter, useSearchParams } from 'next/navigation';
-import React, { Suspense, useState } from 'react';
+import * as React from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { encodePassphrase, randomString } from '@/lib/client-utils';
-import styles from '../styles/Home.module.css';
+import { fetchArtifacts, fetchRuns, type ArtifactItem, type PastRun } from '@/lib/contentApi';
+import { CodaMark } from '@/components/CodaMark';
+import styles from '../styles/Coda.module.css';
 
-function Tabs(props: React.PropsWithChildren<{}>) {
-  const searchParams = useSearchParams();
-  const tabIndex = searchParams?.get('tab') === 'custom' ? 1 : 0;
+type Mode = 'create' | 'join';
 
-  const router = useRouter();
-  function onTabSelected(index: number) {
-    const tab = index === 1 ? 'custom' : 'demo';
-    router.push(`/?tab=${tab}`);
-  }
-
-  let tabs = React.Children.map(props.children, (child, index) => {
-    return (
-      <button
-        className={styles.tabButton}
-        onClick={() => {
-          if (onTabSelected) {
-            onTabSelected(index);
-          }
-        }}
-        aria-pressed={tabIndex === index}
-      >
-        {/* @ts-ignore */}
-        {child?.props.label}
-      </button>
-    );
-  });
-
+export default function CodaLandingPage() {
   return (
-    <div className={styles.tabContainer}>
-      <div className={styles.tabSelect}>{tabs}</div>
-      {/* @ts-ignore */}
-      {props.children[tabIndex]}
+    <main className={styles.shell} data-lk-theme="default">
+      <TopBar />
+      <Hero />
+      <SessionsSection />
+      <FooterStrip />
+    </main>
+  );
+}
+
+function TopBar() {
+  return (
+    <div className={styles.topBar}>
+      <div className={styles.brandPlate}>
+        <CodaMark size={44} />
+        <div>
+          <div className={styles.brandWord}>Coda</div>
+          <div className={styles.brandTag}>Meetings, reconsidered</div>
+        </div>
+      </div>
+      <nav className={styles.topNav}>
+        <a href="#start">Start</a>
+        <a href="#sessions">Sessions</a>
+        <a href="https://github.com/livekit/meet" target="_blank" rel="noreferrer">
+          Source
+        </a>
+      </nav>
     </div>
   );
 }
 
-function DemoMeetingTab(props: { label: string }) {
-  const router = useRouter();
-  const [e2ee, setE2ee] = useState(false);
-  const [sharedPassphrase, setSharedPassphrase] = useState(randomString(64));
-  const [hostName, setHostName] = useState('');
-  const [joinName, setJoinName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
-  const [pendingAction, setPendingAction] = useState<'create' | 'join' | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  async function createRoom() {
-    const trimmedHostName = hostName.trim();
-    if (!trimmedHostName) {
-      setErrorMessage('Host name is required to create a room.');
-      return;
-    }
-    setErrorMessage(null);
-    setPendingAction('create');
-    try {
-      const response = await fetch('/api/world/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hostName: trimmedHostName }),
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const data = (await response.json()) as { worldId: string; roomName: string };
-      const params = new URLSearchParams({
-        worldId: data.worldId,
-        created: '1',
-        prefillName: trimmedHostName,
-      });
-      const hash = e2ee ? `#${encodePassphrase(sharedPassphrase)}` : '';
-      router.push(`/rooms/${data.roomName}?${params.toString()}${hash}`);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to create room.');
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
-  async function joinRoom() {
-    const trimmedRoomCode = roomCode.trim();
-    if (!trimmedRoomCode) {
-      setErrorMessage('Room code is required to join.');
-      return;
-    }
-    setErrorMessage(null);
-    setPendingAction('join');
-    try {
-      const lookupUrl = `/api/world/by-room?roomName=${encodeURIComponent(trimmedRoomCode)}`;
-      const response = await fetch(lookupUrl);
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const data = (await response.json()) as { worldId: string; roomName: string };
-      const params = new URLSearchParams({ worldId: data.worldId });
-      const trimmedJoinName = joinName.trim();
-      if (trimmedJoinName) {
-        params.set('prefillName', trimmedJoinName);
-      }
-      const hash = e2ee ? `#${encodePassphrase(sharedPassphrase)}` : '';
-      router.push(`/rooms/${data.roomName}?${params.toString()}${hash}`);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to join room.');
-    } finally {
-      setPendingAction(null);
-    }
-  }
-
+function Hero() {
   return (
-    <div className={styles.tabContent}>
-      <p className={styles.helperText}>
-        Create a room once, share the code, and let everyone join the same live space.
-      </p>
-      <div className={styles.actionSplit}>
-        <div className={styles.actionPane}>
-          <h3>Create Room</h3>
-          <div className={styles.fieldStack}>
-            <label htmlFor="hostName">Host name</label>
-            <input
-              id="hostName"
-              value={hostName}
-              onChange={(ev) => setHostName(ev.target.value)}
-              placeholder="Enter host name"
-            />
-          </div>
-          <button
-            className={`${styles.primaryAction} lk-button`}
-            onClick={createRoom}
-            disabled={pendingAction !== null}
-          >
-            {pendingAction === 'create' ? 'Creating Room...' : 'Create Room'}
-          </button>
-        </div>
-        <div className={styles.actionPane}>
-          <h3>Join Room</h3>
-          <div className={styles.fieldStack}>
-            <label htmlFor="roomCode">Room code</label>
-            <input
-              id="roomCode"
-              value={roomCode}
-              onChange={(ev) => setRoomCode(ev.target.value)}
-              placeholder="e.g. ab12-cd34"
-            />
-          </div>
-          <div className={styles.fieldStack}>
-            <label htmlFor="joinName">Your name</label>
-            <input
-              id="joinName"
-              value={joinName}
-              onChange={(ev) => setJoinName(ev.target.value)}
-              placeholder="Optional"
-            />
-          </div>
-          <button
-            className={`${styles.primaryAction} lk-button`}
-            onClick={joinRoom}
-            disabled={pendingAction !== null}
-          >
-            {pendingAction === 'join' ? 'Joining Room...' : 'Join Room'}
-          </button>
-        </div>
+    <section className={styles.hero} id="start">
+      <div className={styles.heroCopy}>
+        <CodaMark size={220} drift className={styles.heroFloat} />
+        <span className={styles.eyebrow}>Every meeting deserves a coda</span>
+        <h1 className={styles.headline}>
+          Talk freely. We&rsquo;ll write the
+          <br />
+          <span className={styles.headlineEmphasis}>recap, the deck, the quiz.</span>
+        </h1>
+        <p className={styles.lede}>
+          Coda turns the moment you hang up into nine learning artifacts — a written report, an
+          audio podcast, a slide deck, a mind map, flashcards, a quiz, an infographic, a data
+          table, and a video. Generated automatically. Available for download before everyone
+          finishes saying goodbye.
+        </p>
+        <p className={styles.lede}>
+          And while you&rsquo;re still in the room — share an{' '}
+          <span className={styles.headlineEmphasis}>interactive 3D space</span> with everyone on the
+          call. Walk a candlelit library, orbit a stone bedroom, or drop your own scene. Cursors
+          sync, the host steers, and your past meeting&rsquo;s artifacts are already pinned to the
+          walls.
+        </p>
+        <ul className={styles.heroFeatures}>
+          <li>
+            <span>01</span>Shared 3D worlds during the meeting
+          </li>
+          <li>
+            <span>02</span>Auto-generated recap the moment you leave
+          </li>
+          <li>
+            <span>03</span>Plain files. Yours to keep.
+          </li>
+        </ul>
       </div>
-      {errorMessage && <p className={styles.errorText}>{errorMessage}</p>}
-      <div className={styles.securityPanel}>
-        <div className={styles.checkRow}>
-          <input
-            id="demo-use-e2ee"
-            type="checkbox"
-            checked={e2ee}
-            onChange={(ev) => setE2ee(ev.target.checked)}
-          ></input>
-          <label htmlFor="demo-use-e2ee">Use end-to-end encryption</label>
-        </div>
-        {e2ee && (
-          <div className={styles.fieldRow}>
-            <label htmlFor="demo-passphrase">Passphrase</label>
-            <input
-              id="demo-passphrase"
-              type="password"
-              value={sharedPassphrase}
-              onChange={(ev) => setSharedPassphrase(ev.target.value)}
-            />
-          </div>
-        )}
-      </div>
-    </div>
+      <Starter />
+    </section>
   );
 }
 
-function CustomConnectionTab(props: { label: string }) {
+function Starter() {
   const router = useRouter();
+  const [mode, setMode] = React.useState<Mode>('create');
+  const [hostName, setHostName] = React.useState('');
+  const [joinName, setJoinName] = React.useState('');
+  const [roomCode, setRoomCode] = React.useState('');
+  const [e2ee, setE2ee] = React.useState(false);
+  const [passphrase] = React.useState(() => randomString(64));
+  const [pending, setPending] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const [e2ee, setE2ee] = useState(false);
-  const [sharedPassphrase, setSharedPassphrase] = useState(randomString(64));
-
-  const onSubmit: React.FormEventHandler<HTMLFormElement> = (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.target as HTMLFormElement);
-    const serverUrl = formData.get('serverUrl');
-    const token = formData.get('token');
-    if (e2ee) {
-      router.push(
-        `/custom/?liveKitUrl=${serverUrl}&token=${token}#${encodePassphrase(sharedPassphrase)}`,
-      );
-    } else {
-      router.push(`/custom/?liveKitUrl=${serverUrl}&token=${token}`);
+  const submit = async () => {
+    setError(null);
+    setPending(true);
+    try {
+      if (mode === 'create') {
+        const trimmed = hostName.trim();
+        if (!trimmed) throw new Error('Host name is required.');
+        const resp = await fetch('/api/world/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hostName: trimmed }),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = (await resp.json()) as { worldId: string; roomName: string };
+        const params = new URLSearchParams({
+          worldId: data.worldId,
+          created: '1',
+          prefillName: trimmed,
+        });
+        const hash = e2ee ? `#${encodePassphrase(passphrase)}` : '';
+        router.push(`/rooms/${data.roomName}?${params.toString()}${hash}`);
+      } else {
+        const trimmed = roomCode.trim();
+        if (!trimmed) throw new Error('Room code is required.');
+        const resp = await fetch(`/api/world/by-room?roomName=${encodeURIComponent(trimmed)}`);
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = (await resp.json()) as { worldId: string; roomName: string };
+        const params = new URLSearchParams({ worldId: data.worldId });
+        const trimmedJoin = joinName.trim();
+        if (trimmedJoin) params.set('prefillName', trimmedJoin);
+        const hash = e2ee ? `#${encodePassphrase(passphrase)}` : '';
+        router.push(`/rooms/${data.roomName}?${params.toString()}${hash}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start meeting.');
+    } finally {
+      setPending(false);
     }
   };
+
   return (
-    <form className={styles.tabContent} onSubmit={onSubmit}>
-      <p className={styles.helperText}>
-        Connect SpacePresent to your own real-time media server using a compatible WebRTC endpoint
-        and access token.
-      </p>
-      <div className={styles.fieldStack}>
-        <label htmlFor="serverUrl">Server URL</label>
-        <input
-          id="serverUrl"
-          name="serverUrl"
-          type="url"
-          placeholder="wss://*.livekit.cloud"
-          required
-        />
-      </div>
-      <div className={styles.fieldStack}>
-        <label htmlFor="token">Access token</label>
-        <textarea id="token" name="token" placeholder="Paste token" required rows={5} />
-      </div>
-      <div className={styles.securityPanel}>
-        <div className={styles.checkRow}>
-          <input
-            id="custom-use-e2ee"
-            type="checkbox"
-            checked={e2ee}
-            onChange={(ev) => setE2ee(ev.target.checked)}
-          ></input>
-          <label htmlFor="custom-use-e2ee">Enable end-to-end encryption</label>
+    <div className={styles.starter}>
+      <div className={styles.starterHeader}>
+        <h2 className={styles.starterTitle}>Open the room</h2>
+        <div className={styles.starterToggle} role="tablist">
+          <button
+            role="tab"
+            aria-selected={mode === 'create'}
+            onClick={() => setMode('create')}
+            className={mode === 'create' ? styles.starterToggleActive : ''}
+          >
+            New
+          </button>
+          <button
+            role="tab"
+            aria-selected={mode === 'join'}
+            onClick={() => setMode('join')}
+            className={mode === 'join' ? styles.starterToggleActive : ''}
+          >
+            Join
+          </button>
         </div>
-        {e2ee && (
-          <div className={styles.fieldRow}>
-            <label htmlFor="custom-passphrase">Passphrase</label>
+      </div>
+
+      {mode === 'create' ? (
+        <div className={styles.starterField}>
+          <label htmlFor="coda-host">Host name</label>
+          <input
+            id="coda-host"
+            value={hostName}
+            onChange={(e) => setHostName(e.target.value)}
+            placeholder="e.g. Maya"
+            onKeyDown={(e) => e.key === 'Enter' && void submit()}
+          />
+        </div>
+      ) : (
+        <>
+          <div className={styles.starterField}>
+            <label htmlFor="coda-code">Room code</label>
             <input
-              id="custom-passphrase"
-              type="password"
-              value={sharedPassphrase}
-              onChange={(ev) => setSharedPassphrase(ev.target.value)}
+              id="coda-code"
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value)}
+              placeholder="ab12-cd34"
+              onKeyDown={(e) => e.key === 'Enter' && void submit()}
             />
           </div>
-        )}
-      </div>
+          <div className={styles.starterField}>
+            <label htmlFor="coda-name">Your name</label>
+            <input
+              id="coda-name"
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              placeholder="Optional"
+              onKeyDown={(e) => e.key === 'Enter' && void submit()}
+            />
+          </div>
+        </>
+      )}
 
-      <hr className={styles.divider} />
-      <button className={`${styles.primaryAction} lk-button`} type="submit">
-        Connect Space
+      <button
+        className={styles.starterCta}
+        onClick={() => void submit()}
+        disabled={pending}
+        type="button"
+      >
+        {pending
+          ? mode === 'create'
+            ? 'Creating room…'
+            : 'Joining room…'
+          : mode === 'create'
+            ? 'Start meeting →'
+            : 'Join meeting →'}
       </button>
-    </form>
-  );
-}
 
-function SpatialPreview() {
-  return (
-    <div className={styles.preview} aria-hidden="true">
-      <div className={styles.previewHeader}>
-        <span>World graph</span>
-        <span>Live sync</span>
+      <div className={styles.starterMeta}>
+        <label>
+          <input
+            type="checkbox"
+            checked={e2ee}
+            onChange={(e) => setE2ee(e.target.checked)}
+          />
+          End-to-end encrypted
+        </label>
+        <span>recap auto-generates on leave</span>
       </div>
-      <div className={styles.mapGrid}>
-        <span className={`${styles.node} ${styles.nodeAlpha}`}></span>
-        <span className={`${styles.node} ${styles.nodeBeta}`}></span>
-        <span className={`${styles.node} ${styles.nodeGamma}`}></span>
-        <span className={`${styles.node} ${styles.nodeDelta}`}></span>
-        <span className={styles.orbit}></span>
-        <span className={styles.trace}></span>
-        <span className={`${styles.block} ${styles.blockOne}`}></span>
-        <span className={`${styles.block} ${styles.blockTwo}`}></span>
-        <span className={`${styles.block} ${styles.blockThree}`}></span>
-      </div>
-      <div className={styles.timeline}>
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
+
+      {error && <p className={styles.starterError}>{error}</p>}
     </div>
   );
 }
 
-export default function Page() {
+function SessionsSection() {
+  const [runs, setRuns] = React.useState<PastRun[] | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const list = await fetchRuns();
+      if (!cancelled) setRuns(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
-    <>
-      <main className={styles.main} data-lk-theme="default">
-        <section className={styles.heroShell}>
-          <div className={styles.header}>
-            <div className={styles.logoPlate}>
-              <Image
-                src="/images/spacepresent-logo.svg"
-                alt="SpacePresent"
-                width="520"
-                height="96"
-                priority
-              />
-            </div>
-            <p className={styles.eyebrow}>Spatial meeting platform</p>
-            <h1>Turn meetings into navigable knowledge spaces.</h1>
-            <p className={styles.lede}>
-              SpacePresent gives teams a real-time room shaped for interactive 3D worlds, host-led
-              tours, live discussion, and post-meeting knowledge artifacts.
-            </p>
-            <div className={styles.signalStrip} aria-label="Platform signals">
-              <span>Document graph</span>
-              <span>Procedural city</span>
-              <span>Live tour sync</span>
-            </div>
+    <section className={styles.sessions} id="sessions">
+      <div className={styles.sectionHead}>
+        <h2 className={styles.sectionTitle}>Past sessions</h2>
+        <span className={styles.sectionMeta}>
+          {runs === null ? 'loading…' : runs.length === 1 ? '1 recap' : `${runs.length} recaps`}
+        </span>
+      </div>
+      <div className={styles.sessionsGrid}>
+        {runs === null ? (
+          <div className={styles.sessionEmpty}>Tuning the archive…</div>
+        ) : runs.length === 0 ? (
+          <div className={styles.sessionEmpty}>
+            No sessions yet. Your first recap will appear here the moment you leave a meeting.
           </div>
-          <div className={styles.launchStack}>
-            <SpatialPreview />
-            <Suspense fallback={<div className={styles.loading}>Loading meeting options</div>}>
-              <Tabs>
-                <DemoMeetingTab label="Demo" />
-                <CustomConnectionTab label="Custom" />
-              </Tabs>
-            </Suspense>
-          </div>
-        </section>
-      </main>
-      <footer data-lk-theme="default">
-        SpacePresent is a spatial collaboration shell for rooms, worlds, and recap artifacts.
-      </footer>
-    </>
+        ) : (
+          runs.map((r) => <SessionCard key={r.notebook_id} run={r} />)
+        )}
+      </div>
+    </section>
   );
+}
+
+function SessionCard({ run }: { run: PastRun }) {
+  const [artifacts, setArtifacts] = React.useState<ArtifactItem[] | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const items = await fetchArtifacts(run.notebook_id);
+        if (!cancelled) setArtifacts(items);
+      } catch {
+        if (!cancelled) setArtifacts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [run.notebook_id]);
+
+  const ts = run.started_at ? formatTimestamp(run.started_at) : '—';
+  const total = run.tasks?.length ?? 9;
+  const ready = artifacts?.filter((a) => a.status === 'completed').length ?? 0;
+  const processing = artifacts?.filter((a) => a.status === 'processing').length ?? 0;
+
+  return (
+    <Link href={`/recap/${run.notebook_id}`} className={styles.sessionCard}>
+      <span className={styles.sessionTimestamp}>{ts}</span>
+      <h3 className={styles.sessionTitle}>{run.title ?? 'Meeting recap'}</h3>
+      <div className={styles.sessionStatus}>
+        <span className={styles.sessionDots} aria-hidden>
+          {Array.from({ length: total }).map((_, i) => {
+            const cls =
+              i < ready
+                ? styles.dotReady
+                : i < ready + processing
+                  ? styles.dotProcessing
+                  : '';
+            return <span key={i} className={cls} />;
+          })}
+        </span>
+        <span>
+          {artifacts === null ? 'syncing…' : `${ready}/${total} ready`}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function FooterStrip() {
+  return (
+    <div className={styles.codaFooter}>
+      <span>Coda · Meetings, reconsidered</span>
+      <span>Built atop LiveKit + NotebookLM</span>
+    </div>
+  );
+}
+
+function formatTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d
+      .toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+      .toUpperCase();
+  } catch {
+    return iso;
+  }
 }

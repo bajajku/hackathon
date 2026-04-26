@@ -357,6 +357,71 @@ const cool=new THREE.DirectionalLight(0x3344aa,.15);cool.position.set(0,12,0);sc
 const upL=new THREE.PointLight(0x66aaff,2.5,10);upL.position.set(0,1,0);scene.add(upL);
 fl.push({light:upL,baseIntensity:1.5,idx:105});
 
+// ====== CODA SAMPLE ARTIFACTS ======
+const codaPanels = [];
+function makeCodaPanel(title, body, opts) {
+  opts = opts || {};
+  const w = opts.w || 512, h = opts.h || 320;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = opts.bg || '#0b0e10';
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = opts.accent || '#ff7a3d';
+  g.fillRect(28, 28, 4, h - 56);
+  g.fillStyle = opts.accent || '#ff7a3d';
+  g.font = 'bold 16px ui-monospace, monospace';
+  g.textBaseline = 'top';
+  g.fillText('CODA · ' + (opts.kicker || 'LAST SESSION'), 52, 32);
+  g.fillStyle = '#f0ead6';
+  g.font = 'bold 32px Georgia, serif';
+  g.fillText(title, 52, 60);
+  g.fillStyle = '#b8d6df';
+  g.font = '20px Georgia, serif';
+  const words = body.split(' ');
+  let line = '', y = 110;
+  for (const word of words) {
+    const test = line + word + ' ';
+    if (g.measureText(test).width > w - 80 && line) { g.fillText(line.trim(), 52, y); line = word + ' '; y += 28; }
+    else line = test;
+  }
+  if (line) g.fillText(line.trim(), 52, y);
+  g.fillStyle = opts.accent || '#ff7a3d';
+  g.beginPath(); g.arc(w - 48, h - 48, 10, 0, Math.PI * 2); g.fill();
+  const tex = new THREE.CanvasTexture(c);
+  if ('encoding' in tex) tex.encoding = THREE.sRGBEncoding;
+  tex.anisotropy = 4;
+  const aspect = w / h;
+  const planeH = opts.planeH || 1.8;
+  const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(planeH * aspect, planeH), m);
+  mesh.userData.bobOffset = Math.random() * Math.PI * 2;
+  return mesh;
+}
+function pinCodaPanel(mesh, x, y, z, ry) {
+  mesh.position.set(x, y, z);
+  if (typeof ry === 'number') mesh.rotation.y = ry;
+  mesh.userData.baseY = y;
+  codaPanels.push(mesh);
+  scene.add(mesh);
+}
+pinCodaPanel(
+  makeCodaPanel('Machine learning, decoded', 'Recap pinned from your last session — every artifact still downloads from the Coda recap page.', { kicker: 'COLLECTED RECAP', planeH: 2.2 }),
+  0, 9.5, -8.6,
+);
+pinCodaPanel(
+  makeCodaPanel('Supervised', 'Trains on labeled examples — spam, images, prices, diagnoses.', { kicker: 'FLASHCARD · 01' }),
+  -8.5, 5.5, -3.0, 0.55,
+);
+pinCodaPanel(
+  makeCodaPanel('Unsupervised', 'Finds structure on its own — clusters, anomalies, latent factors.', { kicker: 'FLASHCARD · 02' }),
+  8.5, 5.5, -3.0, -0.55,
+);
+pinCodaPanel(
+  makeCodaPanel('Deep learning', 'Stacks neural layers to extract progressively higher-level features.', { kicker: 'NOTE · 03' }),
+  0, 3.4, 4.5,
+);
+
 // ====== ORBIT ======
 let isDrag=false,pX=0,pY=0,theta=0,phi=.5,radius=20;
 const tgt=new THREE.Vector3(0,4,1);
@@ -385,6 +450,7 @@ crystLight2.intensity=2+pulse*1.5;
 fl.forEach(f=>{const n=f.idx||0;
 if(f.light){const b=f.baseIntensity||1;f.light.intensity=b+Math.sin(t*7+n)*b*.18+Math.sin(t*13+n*2)*b*.12;}
 if(f.flame){f.flame.scale.y=1.5+Math.sin(t*9+n)*.4;f.flame.scale.x=1+Math.sin(t*7+n*3)*.2;}});
+for(let i=0;i<codaPanels.length;i++){const p=codaPanels[i];p.position.y=p.userData.baseY+Math.sin(t*.7+p.userData.bobOffset)*.1;}
 R.render(scene,camera);}
 animate();
 window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();R.setSize(innerWidth,innerHeight);});

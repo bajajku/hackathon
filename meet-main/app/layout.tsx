@@ -7,25 +7,17 @@ import { Toaster } from 'react-hot-toast';
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   title: {
-    default: 'SpacePresent | Spatial interactive meetings',
-    template: '%s',
+    default: 'Coda — Every meeting deserves a coda',
+    template: '%s · Coda',
   },
   description:
-    'SpacePresent turns meetings and dense information into navigable collaborative knowledge spaces.',
+    'Coda turns meeting transcripts into reports, podcasts, decks, quizzes, and more — automatically, the moment you leave the room.',
   twitter: {
     card: 'summary_large_image',
   },
   openGraph: {
     url: '/',
-    images: [
-      {
-        url: '/images/spacepresent-logo.svg',
-        width: 520,
-        height: 96,
-        type: 'image/svg+xml',
-      },
-    ],
-    siteName: 'SpacePresent',
+    siteName: 'Coda',
   },
   icons: {
     icon: {

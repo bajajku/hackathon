@@ -38,6 +38,7 @@ import {
   ConnectionState,
 } from 'livekit-client';
 import { useRouter } from 'next/navigation';
+import { runDemo } from '@/lib/contentApi';
 import { useSetupE2EE } from '@/lib/useSetupE2EE';
 import { useLowCPUOptimizer } from '@/lib/usePerfomanceOptimiser';
 import { useBrowserSpeechTranscription } from '@/lib/useBrowserSpeechTranscription';
@@ -332,7 +333,23 @@ function VideoConferenceComponent(props: {
   }, []);
 
   const router = useRouter();
-  const handleOnLeave = React.useCallback(() => router.push('/'), [router]);
+  const handleLeaveFiredRef = React.useRef(false);
+  const handleOnLeave = React.useCallback(() => {
+    if (handleLeaveFiredRef.current) return;
+    handleLeaveFiredRef.current = true;
+    void (async () => {
+      try {
+        const data = await runDemo(`Meeting Recap - ${new Date().toLocaleString()}`);
+        if (data.notebook_id) {
+          router.push(`/recap/${data.notebook_id}`);
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to kick off content generation', error);
+      }
+      router.push('/');
+    })();
+  }, [router]);
   const assignScreenTrack = React.useCallback((track: MediaStreamTrack | null) => {
     activeScreenTrackRef.current = track;
     if (!track) {
@@ -931,6 +948,7 @@ function VideoConferenceComponent(props: {
           </WorkspaceStage>
           <DebugMode />
           <RecordingIndicator />
+          <CodaMeetingHint />
         </WorldSessionProvider>
       </RoomContext.Provider>
     </div>
@@ -939,6 +957,22 @@ function VideoConferenceComponent(props: {
 
 function isAiPipelinePermissionIssue(message: string): boolean {
   return /(permission denied|forbidden|unauthorized|401|403)/i.test(message);
+}
+
+function CodaMeetingHint() {
+  const [shown, setShown] = React.useState(true);
+  React.useEffect(() => {
+    const t = window.setTimeout(() => setShown(false), 7000);
+    return () => window.clearTimeout(t);
+  }, []);
+  if (!shown) return null;
+  return (
+    <div className="coda-meeting-hint" role="status">
+      <span>Leave the room and</span>
+      <b>Coda</b>
+      <span>writes your recap</span>
+    </div>
+  );
 }
 
 function WorkspaceStage(props: {

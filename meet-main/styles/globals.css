@@ -1,11 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 :root {
+  --font-display:
+    'Fraunces', 'Times New Roman', ui-serif, Georgia, serif;
   --font-sans:
-    'Space Grotesk', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    sans-serif;
+    'Manrope', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono:
-    'Space Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, ui-monospace, monospace;
+    'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, ui-monospace, monospace;
+  --coda-ember: #ff7a3d;
+  --coda-ember-deep: #c34d18;
   --page-bg: #050912;
   --page-bg-soft: #08131f;
   --panel-core: rgba(5, 12, 21, 0.86);
@@ -44,8 +47,8 @@
   --lk-fg5: var(--text-muted);
   --lk-accent-bg: var(--accent-mint);
   --lk-accent-fg: #031018;
-  --lk-danger: var(--danger);
-  --lk-danger2: rgba(255, 85, 74, 0.34);
+  --lk-danger: var(--coda-ember, #ff7a3d);
+  --lk-danger2: rgba(255, 122, 61, 0.32);
   --lk-danger3: var(--danger);
   --lk-border-radius: var(--radius-md);
 }
@@ -668,6 +671,83 @@ button:disabled {
   box-shadow:
     inset 0 0 0 2px rgba(255, 85, 74, 0.88),
     inset 0 0 52px rgba(255, 85, 74, 0.12);
+}
+
+/* === Coda meeting hints === */
+
+.coda-meeting-hint {
+  position: fixed;
+  bottom: 1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  background: linear-gradient(
+      90deg,
+      rgba(255, 122, 61, 0.22),
+      rgba(255, 122, 61, 0.06) 60%,
+      rgba(98, 232, 255, 0.06)
+    ),
+    rgba(8, 18, 28, 0.86);
+  border: 1px solid rgba(255, 122, 61, 0.32);
+  box-shadow: 0 12px 30px -10px rgba(255, 122, 61, 0.45);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+  animation: codaHintFade 7s ease forwards;
+}
+
+.coda-meeting-hint b {
+  color: var(--coda-ember, #ff7a3d);
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  font-size: 0.95rem;
+  font-variation-settings: '"opsz" 96, "SOFT" 50, "WONK" 1';
+}
+
+@keyframes codaHintFade {
+  0%, 70% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+}
+
+/* Make the LiveKit leave/disconnect button visibly ember to signal the recap action */
+.lk-disconnect-button,
+button.lk-button.lk-disconnect-button {
+  border-color: rgba(255, 122, 61, 0.55) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 122, 61, 0.55), rgba(255, 180, 128, 0.35)) !important;
+  color: #1a0a04 !important;
+}
+
+.lk-disconnect-button:hover:not(:disabled),
+button.lk-button.lk-disconnect-button:hover:not(:disabled) {
+  background:
+    linear-gradient(135deg, rgba(255, 122, 61, 0.85), rgba(255, 180, 128, 0.55)) !important;
+  border-color: rgba(255, 180, 128, 0.85) !important;
+}
+
+/* Prejoin: lift the title plate */
+.lk-prejoin h1,
+.lk-prejoin h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  font-variation-settings: '"opsz" 96, "SOFT" 40, "WONK" 1';
 }
 
 footer {

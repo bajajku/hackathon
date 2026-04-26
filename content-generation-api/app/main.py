@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.dependencies import lifespan
 from app.middleware.error_handler import register_error_handlers
-from app.routers import artifacts, auth, chat, downloads, notebooks, sources
+from app.routers import artifacts, auth, chat, demo, downloads, notebooks, sources
 
 app = FastAPI(
     title="Content Generation API",
@@ -30,6 +30,7 @@ app.include_router(sources.router, prefix="/api/notebooks", tags=["Sources"])
 app.include_router(artifacts.router, prefix="/api/notebooks", tags=["Artifacts"])
 app.include_router(downloads.router, prefix="/api/downloads", tags=["Downloads"])
 app.include_router(chat.router, prefix="/api/notebooks", tags=["Chat"])
+app.include_router(demo.router, prefix="/api/demo", tags=["Demo"])
 
 
 @app.get("/api/health")
